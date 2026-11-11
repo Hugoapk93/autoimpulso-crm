@@ -28,6 +28,13 @@
     <string name="crm_menu_terminal">Terminal</string>
     <string name="crm_menu_reload">Recargar panel</string>
     <string name="crm_menu_restart_bot">Reiniciar bot</string>
+    <string name="crm_menu_token">Token del panel</string>
+    <string name="crm_token_title">Token del panel</string>
+    <string name="crm_token_hint">Este es el token para entrar al panel. Toca el icono para copiarlo y pégalo cuando el panel te lo pida.</string>
+    <string name="crm_token_copy">Copiar token</string>
+    <string name="crm_token_copied">Token copiado</string>
+    <string name="crm_token_close">Cerrar</string>
+    <string name="crm_token_missing">Todavía no hay token: el bot no ha creado el .env.</string>
 
 
 

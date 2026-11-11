@@ -1,13 +1,18 @@
 package com.termux.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.res.AssetManager;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -16,7 +21,10 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.ImageButton;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.widget.Toolbar;
 
 import com.termux.R;
@@ -25,8 +33,10 @@ import com.termux.shared.shell.TermuxSession;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -55,10 +65,16 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private static final String SETUP_SESSION_NAME = "crm-setup";
     private static final String SERVER_URL = "http://127.0.0.1:3000";
     private static final String STATUS_URL = SERVER_URL + "/api/status";
+    /** Progress file written by setup-crm.sh: one line "0-100|step text". */
+    private static final String SETUP_PROGRESS_FILE = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.crm-setup.progress";
+    /** Token file and prefs for the "show token" dialog. */
+    private static final String ENV_FILE = CRM_BOT_DIR + "/.env";
+    private static final String TOKEN_PREFS = "crm_token";
+    private static final String TOKEN_SHOWN_KEY = "token_shown";
 
     private static final int POLL_INTERVAL_MS = 1000;
     /** Time allowed for the bot to answer when it only needs to be started. */
-    private static final int START_TIMEOUT_MS = 90_000;
+    private static final int START_TIMEOUT_MS = 240_000;
     /** Time allowed on first run (downloads Node.js + npm install need internet). */
     private static final int SETUP_TIMEOUT_MS = 10 * 60_000;
 
@@ -67,6 +83,10 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private View mErrorView;
     private TextView mLoadingText;
     private TextView mErrorText;
+    private ProgressBar mSetupProgress;
+    private TextView mSetupPercent;
+    private int mLastSetupProgress = -1;
+    private String mLastSetupStep = null;
 
     private TermuxService mTermuxService;
     private boolean mBound = false;
@@ -92,6 +112,8 @@ public class CrmActivity extends Activity implements ServiceConnection {
         mErrorView = findViewById(R.id.crm_error);
         mLoadingText = findViewById(R.id.crm_loading_text);
         mErrorText = findViewById(R.id.crm_error_text);
+        mSetupProgress = findViewById(R.id.crm_setup_progress);
+        mSetupPercent = findViewById(R.id.crm_setup_percent);
 
         WebSettings settings = mWebView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -210,6 +232,14 @@ public class CrmActivity extends Activity implements ServiceConnection {
         } else if (id == R.id.crm_menu_restart_bot) {
             restartBot();
             return true;
+        } else if (id == R.id.crm_menu_token) {
+            String token = readApiToken();
+            if (token != null) {
+                showTokenDialog(token);
+            } else {
+                Toast.makeText(this, R.string.crm_token_missing, Toast.LENGTH_SHORT).show();
+            }
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -228,6 +258,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
                 return;
             }
             mSetupRunning = true;
+            showSetupProgress();
             startBotSession(SETUP_SESSION_NAME, CRM_BOT_DIR + "/setup-crm.sh");
         } else if (findBotSession() == null) {
             setLoadingText(R.string.crm_starting_bot);
@@ -319,6 +350,11 @@ public class CrmActivity extends Activity implements ServiceConnection {
                     mServerUp = true;
                     break;
                 }
+                // Read it on every start: setup-crm.sh writes progress during
+                // the first install, and start-crm.sh only when it has to
+                // repair something (broken Node, missing git/deps/.env); the
+                // bar appears when a progress line below 100% shows up.
+                readSetupProgress();
                 if (System.currentTimeMillis() > deadline) break;
                 try {
                     Thread.sleep(POLL_INTERVAL_MS);
@@ -364,13 +400,125 @@ public class CrmActivity extends Activity implements ServiceConnection {
         } else {
             mWebView.reload();
         }
+        // First time a new token is seen, show it with a copy button so the
+        // user can paste it when the panel asks for it.
+        maybeShowTokenDialog();
     }
 
     private void showLoading(int textResId) {
         mErrorView.setVisibility(View.GONE);
         mWebView.setVisibility(View.GONE);
         mLoadingView.setVisibility(View.VISIBLE);
+        // The bar only belongs to the first-run setup; other waits show text only.
+        if (mSetupProgress != null) mSetupProgress.setVisibility(View.GONE);
+        if (mSetupPercent != null) mSetupPercent.setVisibility(View.GONE);
         setLoadingText(textResId);
+    }
+
+    /** Show the determinate progress bar for the first-run setup (0%). */
+    private void showSetupProgress() {
+        mLastSetupProgress = -1;
+        mLastSetupStep = null;
+        if (mSetupProgress != null) {
+            mSetupProgress.setProgress(0);
+            mSetupProgress.setVisibility(View.VISIBLE);
+        }
+        if (mSetupPercent != null) {
+            mSetupPercent.setText("0%");
+            mSetupPercent.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /**
+     * Read the progress file written by setup-crm.sh ("0-100|step text") and
+     * update the bar, the percentage and the step text. A missing or malformed
+     * file just keeps the previous values: the script writes it a few seconds
+     * after starting, and the server poll is what decides when setup is done.
+     */
+    private void readSetupProgress() {
+        String line;
+        try (BufferedReader reader = new BufferedReader(new FileReader(SETUP_PROGRESS_FILE))) {
+            line = reader.readLine();
+        } catch (IOException e) {
+            return;
+        }
+        if (line == null) return;
+        int sep = line.indexOf('|');
+        if (sep < 0) return;
+        int percent;
+        try {
+            percent = Integer.parseInt(line.substring(0, sep).trim());
+        } catch (NumberFormatException e) {
+            return;
+        }
+        String step = line.substring(sep + 1).trim();
+        if (percent == mLastSetupProgress && step.equals(mLastSetupStep)) return;
+        mLastSetupProgress = percent;
+        mLastSetupStep = step;
+        final int pct = Math.max(0, Math.min(100, percent));
+        runOnUiThread(() -> {
+            if (mSetupProgress != null) {
+                // A repair during a normal start shows the bar too.
+                if (mSetupProgress.getVisibility() != View.VISIBLE && pct < 100) {
+                    mSetupProgress.setVisibility(View.VISIBLE);
+                    if (mSetupPercent != null) mSetupPercent.setVisibility(View.VISIBLE);
+                }
+                mSetupProgress.setProgress(pct);
+            }
+            if (mSetupPercent != null) mSetupPercent.setText(pct + "%");
+            if (mLoadingText != null && !step.isEmpty()) mLoadingText.setText(step);
+        });
+    }
+
+    /** Read API_TOKEN from ~/crm-bot/.env (null if missing or empty). */
+    private String readApiToken() {
+        try (BufferedReader reader = new BufferedReader(new FileReader(ENV_FILE))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("API_TOKEN=")) {
+                    String token = line.substring("API_TOKEN=".length()).trim();
+                    return token.isEmpty() ? null : token;
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * Show the panel token in a dialog with a copy button, the first time a
+     * new token is seen (fresh install, self-heal that created a new .env, or
+     * a restored .env with another token). The menu entry "Token del panel"
+     * shows it again on demand.
+     */
+    private void maybeShowTokenDialog() {
+        String token = readApiToken();
+        if (token == null) return;
+        SharedPreferences prefs = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE);
+        if (token.equals(prefs.getString(TOKEN_SHOWN_KEY, ""))) return;
+        prefs.edit().putString(TOKEN_SHOWN_KEY, token).apply();
+        showTokenDialog(token);
+    }
+
+    private void showTokenDialog(String token) {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_token, null);
+        TextView tokenView = dialogView.findViewById(R.id.crm_token_value);
+        tokenView.setText(token);
+        ImageButton copyButton = dialogView.findViewById(R.id.crm_token_copy);
+        copyButton.setOnClickListener(v -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("API Token", token));
+                Toast.makeText(CrmActivity.this, R.string.crm_token_copied, Toast.LENGTH_SHORT).show();
+            }
+        });
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.crm_token_title)
+                .setView(dialogView)
+                .setNegativeButton(R.string.crm_token_close, null)
+                .show();
     }
 
     private void setLoadingText(int textResId) {
