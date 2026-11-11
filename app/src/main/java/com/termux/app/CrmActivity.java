@@ -48,8 +48,9 @@ import java.util.List;
 /**
  * Launcher activity of the Autoimpulso CRM fork.
  *
- * It shows the CRM panel (served by the Node.js bot on http://127.0.0.1:3000) in a
- * WebView. Behind it, the regular Termux environment keeps running the bot in a
+ * It shows the CRM panel (served by the Node.js bot on http://127.0.0.1:3000,
+ * or on a free port if 3000 is busy — the bot writes its real port to
+ * ~/crm-bot/.port) in a WebView. Behind it, the regular Termux environment keeps running the bot in a
  * TermuxSession named "crm-bot" (or "crm-setup" during the first-run install).
  *
  * The terminal is never hidden away: the "Terminal" menu entry opens the original
@@ -63,8 +64,9 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private static final String CRM_BOT_DIR = TermuxConstants.TERMUX_HOME_DIR_PATH + "/crm-bot";
     private static final String BOT_SESSION_NAME = "crm-bot";
     private static final String SETUP_SESSION_NAME = "crm-setup";
-    private static final String SERVER_URL = "http://127.0.0.1:3000";
-    private static final String STATUS_URL = SERVER_URL + "/api/status";
+    /** Preferred port (first try) and the file where the bot writes its real port. */
+    private static final int DEFAULT_PORT = 3000;
+    private static final String PORT_FILE = CRM_BOT_DIR + "/.port";
     /** Progress file written by setup-crm.sh: one line "0-100|step text". */
     private static final String SETUP_PROGRESS_FILE = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.crm-setup.progress";
     /** Token file and prefs for the "show token" dialog. */
@@ -337,7 +339,32 @@ public class CrmActivity extends Activity implements ServiceConnection {
             return;
         }
         if (!script.canExecute()) script.setExecutable(true);
+        // Drop a stale .port so the poll never talks to the previous bot's port.
+        // (Skipped above when a bot session is already running.)
+        new File(PORT_FILE).delete();
         mTermuxService.createTermuxSession(scriptPath, null, null, CRM_BOT_DIR, false, sessionName);
+    }
+
+    /** Port the bot is really listening on (.port), or the preferred 3000 if not written yet (old bot). */
+    private int readBotPort() {
+        try (BufferedReader reader = new BufferedReader(new FileReader(PORT_FILE))) {
+            String line = reader.readLine();
+            if (line != null) {
+                int port = Integer.parseInt(line.trim());
+                if (port > 0 && port < 65536) return port;
+            }
+        } catch (IOException | NumberFormatException e) {
+            // Not written yet (bot still starting) or old bot without .port.
+        }
+        return DEFAULT_PORT;
+    }
+
+    private String getServerUrl() {
+        return "http://127.0.0.1:" + readBotPort();
+    }
+
+    private String getStatusUrl() {
+        return getServerUrl() + "/api/status";
     }
 
     /** Poll /api/status until the bot answers (any HTTP status counts: 401/503 also mean "up"). */
@@ -377,7 +404,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private boolean isServerUp() {
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(STATUS_URL).openConnection();
+            connection = (HttpURLConnection) new URL(getStatusUrl()).openConnection();
             connection.setConnectTimeout(1500);
             connection.setReadTimeout(1500);
             connection.setRequestMethod("GET");
@@ -396,7 +423,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
         mErrorView.setVisibility(View.GONE);
         mWebView.setVisibility(View.VISIBLE);
         if (mWebView.getUrl() == null) {
-            mWebView.loadUrl(SERVER_URL + "/");
+            mWebView.loadUrl(getServerUrl() + "/");
         } else {
             mWebView.reload();
         }
@@ -421,6 +448,10 @@ public class CrmActivity extends Activity implements ServiceConnection {
         mLastSetupStep = null;
         if (mSetupProgress != null) {
             mSetupProgress.setProgress(0);
+            // Animated stripes until the first real value arrives: a dead 0%
+            // looks like a frozen install, and the script needs a few seconds
+            // to spawn and write its first progress line.
+            mSetupProgress.setIndeterminate(true);
             mSetupProgress.setVisibility(View.VISIBLE);
         }
         if (mSetupPercent != null) {
@@ -463,6 +494,8 @@ public class CrmActivity extends Activity implements ServiceConnection {
                     mSetupProgress.setVisibility(View.VISIBLE);
                     if (mSetupPercent != null) mSetupPercent.setVisibility(View.VISIBLE);
                 }
+                // First real value: stop the animated stripes, show the number.
+                if (mSetupProgress.isIndeterminate()) mSetupProgress.setIndeterminate(false);
                 mSetupProgress.setProgress(pct);
             }
             if (mSetupPercent != null) mSetupPercent.setText(pct + "%");

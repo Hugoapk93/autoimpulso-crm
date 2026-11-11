@@ -181,13 +181,34 @@ const bootstrap = () => {
     });
 
     // 🚀 Arrancar Todo
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => {
-        console.log(`🚀 Torre de Control Local + Sockets en puerto: ${PORT}`);
-        
+    // Puerto dinámico: se intenta el PORT del .env (3000 por defecto) y si
+    // está ocupado (otra instancia del bot u otro proceso en el teléfono),
+    // el sistema asigna uno libre. El puerto real queda en .port para que
+    // la app lo lea y abra el panel ahí.
+    // OJO: el callback va con server.once('listening') y NO como argumento
+    // de listen(): si el primer intento falla, Node no quita ese callback y
+    // al reintentar se dispararía dos veces (doble waService.connect()).
+    const PORT_FILE = path.join(__dirname, '.port');
+    const preferredPort = Number(process.env.PORT) || 3000;
+    let fellBack = false;
+    server.once('listening', () => {
+        const actualPort = server.address().port;
+        fs.writeFileSync(PORT_FILE, String(actualPort));
+        console.log(`🚀 Torre de Control Local + Sockets en puerto: ${actualPort}`);
+
         // 🔥 Arrancamos WhatsApp usando el Singleton
-        waService.connect(); 
+        waService.connect();
     });
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && !fellBack) {
+            fellBack = true;
+            console.warn(`⚠️ Puerto ${preferredPort} ocupado, buscando uno libre...`);
+            server.listen(0);
+        } else {
+            throw err;
+        }
+    });
+    server.listen(preferredPort);
 };
 
 bootstrap();
