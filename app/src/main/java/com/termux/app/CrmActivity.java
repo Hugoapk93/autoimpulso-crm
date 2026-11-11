@@ -40,8 +40,8 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -98,6 +98,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private volatile boolean mServerUp = false;
     private volatile boolean mSetupRunning = false;
     private Thread mPollThread;
+    private Thread mProgressThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -160,6 +161,13 @@ public class CrmActivity extends Activity implements ServiceConnection {
         super.onResume();
         mResumed = true;
         maybeStartBot();
+        // Coming back from the terminal (or any pause) refreshes the bar at once
+        // and restarts the progress reader if it died while the app was away.
+        // Only while we are still waiting for the server (poll thread alive).
+        if (!mServerUp && mPollThread != null && mPollThread.isAlive()) {
+            readSetupProgress();
+            startProgressThread();
+        }
     }
 
     @Override
@@ -172,6 +180,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
     protected void onDestroy() {
         mDestroyed = true;
         if (mPollThread != null) mPollThread.interrupt();
+        if (mProgressThread != null) mProgressThread.interrupt();
         if (mBound) {
             try {
                 unbindService(this);
@@ -270,6 +279,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
         }
 
         startPolling();
+        startProgressThread();
     }
 
     /** Retry from the error view: re-check the server and restart the bot if needed. */
@@ -363,11 +373,40 @@ public class CrmActivity extends Activity implements ServiceConnection {
         return "http://127.0.0.1:" + readBotPort();
     }
 
-    private String getStatusUrl() {
-        return getServerUrl() + "/api/status";
+    /** Is anything listening on the bot's port? A raw TCP connect: no HTTP, no proxy, no DNS. */
+    private boolean isServerUp() {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", readBotPort()), 1000);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
-    /** Poll /api/status until the bot answers (any HTTP status counts: 401/503 also mean "up"). */
+    /** Dedicated progress reader: it only reads ~/.crm-setup.progress and posts it to the bar.
+     *  It runs on its own thread on purpose — the server check must never be able to stall the bar.
+     *  setup-crm.sh writes progress during the first install, and start-crm.sh only when it has
+     *  to repair something (broken Node, missing git/deps/.env). */
+    private void startProgressThread() {
+        if (mProgressThread != null && mProgressThread.isAlive()) return;
+        mProgressThread = new Thread(() -> {
+            while (!mDestroyed && !mServerUp) {
+                readSetupProgress();
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }, "crm-progress");
+        mProgressThread.start();
+    }
+
+    private void stopProgressThread() {
+        if (mProgressThread != null) mProgressThread.interrupt();
+    }
+
+    /** Poll the bot's port until something answers, then show the panel (or the error on timeout). */
     private void startPolling() {
         if (mPollThread != null && mPollThread.isAlive()) return;
         mPollThread = new Thread(() -> {
@@ -377,11 +416,6 @@ public class CrmActivity extends Activity implements ServiceConnection {
                     mServerUp = true;
                     break;
                 }
-                // Read it on every start: setup-crm.sh writes progress during
-                // the first install, and start-crm.sh only when it has to
-                // repair something (broken Node, missing git/deps/.env); the
-                // bar appears when a progress line below 100% shows up.
-                readSetupProgress();
                 if (System.currentTimeMillis() > deadline) break;
                 try {
                     Thread.sleep(POLL_INTERVAL_MS);
@@ -389,6 +423,8 @@ public class CrmActivity extends Activity implements ServiceConnection {
                     break;
                 }
             }
+            // The server answered (panel) or we gave up (error): the bar is done.
+            stopProgressThread();
             if (mDestroyed) return;
             runOnUiThread(() -> {
                 if (mServerUp) {
@@ -399,23 +435,6 @@ public class CrmActivity extends Activity implements ServiceConnection {
             });
         }, "crm-poll");
         mPollThread.start();
-    }
-
-    private boolean isServerUp() {
-        HttpURLConnection connection = null;
-        try {
-            connection = (HttpURLConnection) new URL(getStatusUrl()).openConnection();
-            connection.setConnectTimeout(1500);
-            connection.setReadTimeout(1500);
-            connection.setRequestMethod("GET");
-            // Any HTTP answer means the server is up (401 = token needed, 503 = not ready yet).
-            connection.getResponseCode();
-            return true;
-        } catch (IOException e) {
-            return false;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
     }
 
     private void showPanel() {

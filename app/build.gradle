@@ -30,8 +30,8 @@ android {
         applicationId "com.termux"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 1002
-        versionName "0.118.3"
+        versionCode 1003
+        versionName "0.118.3-crm4"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
@@ -114,10 +114,10 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("autoimpulso-crm_" + (apkVersionTag ? apkVersionTag : "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : "debug") + "_" + (abi ? abi : "universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("autoimpulso-crm_" + (apkVersionTag ? apkVersionTag : "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : "release") + "_" + (abi ? abi : "universal") + ".apk")
             }
         }
     }
