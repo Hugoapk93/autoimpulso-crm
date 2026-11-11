@@ -382,7 +382,18 @@ public class CrmActivity extends Activity implements ServiceConnection {
         // Drop a stale .port so the poll never talks to the previous bot's port.
         // (Skipped above when a bot session is already running.)
         new File(PORT_FILE).delete();
-        mTermuxService.createTermuxSession(scriptPath, null, null, CRM_BOT_DIR, false, sessionName);
+        TermuxSession session = mTermuxService.createTermuxSession(scriptPath, null, null, CRM_BOT_DIR, false, sessionName);
+        // Start the process NOW: creating a session does not start it. The shell
+        // is only forked when something sets the terminal size (updateSize ->
+        // initializeEmulator -> JNI.createSubprocess), and that normally happens
+        // when a terminal view attaches to the session. Without this call the
+        // session exists but nothing runs until the user opens the Terminal —
+        // that is why the setup (and its progress bar) only advanced after
+        // opening the Terminal. 80x24 is the standard headless size; opening
+        // the Terminal later just resizes it (updateSize handles that case).
+        if (session != null && session.getTerminalSession() != null) {
+            session.getTerminalSession().updateSize(80, 24, 0, 0);
+        }
     }
 
     /** Port the bot is really listening on (.port), or the preferred 3000 if not written yet (old bot). */
