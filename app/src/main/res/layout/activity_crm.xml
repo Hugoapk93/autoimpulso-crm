@@ -7,7 +7,7 @@
     <Toolbar
         android:id="@+id/crm_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
+        android:layout_height="56dp"
         android:background="#16a34a"
         android:theme="@android:style/ThemeOverlay.Material.Dark.ActionBar" />
 
