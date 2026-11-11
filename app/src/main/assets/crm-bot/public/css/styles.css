@@ -139,6 +139,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 .qr-container { background: white; padding: 12px; display: inline-block; border-radius: 14px; margin: 15px 0; box-shadow: var(--shadow-md); }
 .qr-success-text { color: var(--success); font-weight: 500; }
 
+/* --- Link LAN en la pantalla del QR (abrir el panel en la laptop) --- */
+.lan-link-card { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--border-glass); border-radius: var(--radius); background: var(--bg-glass); text-align: left; }
+.lan-link-title { margin: 0 0 8px 0; font-size: 0.9rem; font-weight: 600; color: var(--text-main); }
+.lan-link-title i { color: var(--primary); margin-right: 6px; }
+.lan-link-row { display: flex; align-items: center; gap: 8px; }
+.lan-link-url { flex: 1; min-width: 0; font-size: 0.95rem; font-weight: 600; color: var(--primary); text-decoration: none; overflow-wrap: anywhere; }
+.lan-link-url:hover { text-decoration: underline; }
+.lan-link-copy { flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border-glass); background: var(--primary-gradient); color: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.lan-link-note { margin: 10px 0 0 0; font-size: 0.82rem; line-height: 1.45; color: var(--text-muted); }
+
 #mainApp { display: flex; width: 100%; height: 100%; opacity: 0; transition: opacity 0.5s ease; pointer-events: none; }
 #mainApp.visible { opacity: 1; pointer-events: all; }
 

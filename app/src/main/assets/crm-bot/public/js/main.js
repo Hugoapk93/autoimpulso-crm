@@ -401,6 +401,63 @@ window.addEventListener('crm:unauthorized', () => {
     showTokenStep('El token dejó de ser válido. Escríbelo de nuevo para seguir.');
 });
 
+// Link LAN del panel (para abrirlo en la laptop desde la pantalla del QR).
+// Se carga una sola vez por sesión; si no hay WiFi o falla, la tarjeta
+// simplemente no se muestra. Si falla, se reintenta en el siguiente
+// sondeo (lanUrlLoaded solo se marca cuando sí llega una URL).
+let lanUrlLoaded = false;
+let lanUrlLoading = false;
+async function loadLanUrl() {
+    if (lanUrlLoaded || lanUrlLoading) return;
+    lanUrlLoading = true;
+    try {
+        const res = await fetch(`${API_BASE}/api/lan-url`);
+        const data = await res.json();
+        const card = document.getElementById('lanLinkCard');
+        const link = document.getElementById('lanLinkUrl');
+        if (data && data.url && card && link) {
+            link.textContent = data.url;
+            link.href = data.url;
+            card.style.display = '';
+            lanUrlLoaded = true;
+        }
+    } catch (e) { /* sin LAN: no se muestra la tarjeta */ }
+    lanUrlLoading = false;
+}
+
+function copyLanUrl() {
+    const link = document.getElementById('lanLinkUrl');
+    const url = link ? (link.href || link.textContent) : '';
+    if (!url) return;
+    const done = () => {
+        const btn = document.getElementById('lanLinkCopyBtn');
+        if (btn) {
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => { btn.innerHTML = old; }, 2000);
+        }
+        if (typeof showToast === 'function') showToast('Link copiado');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => fallbackCopy(url, done));
+    } else {
+        fallbackCopy(url, done);
+    }
+}
+function fallbackCopy(text, done) {
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    } catch (e) {}
+    if (done) done();
+}
+
 const checkStatus = async () => {
     const wizard = document.getElementById('setupWizard');
     try {
@@ -461,6 +518,7 @@ const checkStatus = async () => {
             if(loading) loading.classList.add('step-hidden');
             if(qrStep) qrStep.classList.remove('step-hidden');
             new QRious({element: document.getElementById('qrCanvas'), value: data.qr, size:200});
+            loadLanUrl();
         }
     } catch(e){}
 
@@ -771,6 +829,7 @@ window.addEventListener('load', () => { setTimeout(registerPush, 2000); });
 window.toggleMenu = toggleMenu;
 window.nav = nav;
 window.submitApiToken = submitApiToken;
+window.copyLanUrl = copyLanUrl;
 window.requestLogout = requestLogout;
 window.confirmLogout = confirmLogout;
 window.installPWA = installPWA;

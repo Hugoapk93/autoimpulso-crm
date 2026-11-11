@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 // 1. 🛠️ Importaciones de Utilidades
 const { normalizePhone } = require('./utils');
@@ -25,6 +26,43 @@ const messageSender = require('./services/messageSender');
 const botEvents = require('./events'); // Para emitir eventos a la UI
 
 const router = express.Router();
+
+// 🌐 URL local (LAN) del panel, SIN token: solo es la IP local del teléfono
+// y el puerto, algo que cualquiera en la misma WiFi puede ver. Sirve para
+// que el panel (pantalla del QR) muestre el link para abrirlo en la laptop.
+// Va ANTES de requireApiToken porque el QR aparece antes de entrar al panel.
+// Si no hay WiFi (sin IP local), responde { url: null } y el panel no
+// muestra la tarjeta.
+function getLanIp() {
+    const ifaces = os.networkInterfaces();
+    // Preferir el WiFi (wlan0 en Android/Termux).
+    for (const name of ['wlan0', 'eth0']) {
+        const addrs = ifaces[name] || [];
+        const ip = addrs.find(a => a.family === 'IPv4' && !a.internal);
+        if (ip) return ip.address;
+    }
+    for (const name of Object.keys(ifaces)) {
+        const addrs = ifaces[name] || [];
+        const ip = addrs.find(a => a.family === 'IPv4' && !a.internal);
+        if (ip) return ip.address;
+    }
+    return null;
+}
+function getServerPort() {
+    try {
+        const portFile = path.join(__dirname, '../.port');
+        if (fs.existsSync(portFile)) {
+            const p = Number(fs.readFileSync(portFile, 'utf-8').trim());
+            if (p > 0 && p < 65536) return p;
+        }
+    } catch (e) {}
+    return Number(process.env.PORT) || 3000;
+}
+router.get('/lan-url', (req, res) => {
+    const ip = getLanIp();
+    if (!ip) return res.json({ url: null });
+    res.json({ url: `http://${ip}:${getServerPort()}` });
+});
 
 // 🔐 Autenticación de la API: todas las rutas de este router exigen el
 // token compartido (ver src/auth.js). Sin API_TOKEN configurado el

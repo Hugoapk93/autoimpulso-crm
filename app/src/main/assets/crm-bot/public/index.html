@@ -43,6 +43,14 @@
                 <canvas id="qrCanvas"></canvas>
             </div>
             <p class="qr-success-text"><i class="fas fa-mobile-alt"></i> Escanea el código QR</p>
+            <div id="lanLinkCard" class="lan-link-card" style="display: none;">
+                <p class="lan-link-title"><i class="fas fa-laptop"></i> Abrir en la computadora</p>
+                <div class="lan-link-row">
+                    <a id="lanLinkUrl" class="lan-link-url" href="#" target="_blank" rel="noopener"></a>
+                    <button id="lanLinkCopyBtn" class="lan-link-copy" type="button" title="Copiar link" onclick="copyLanUrl()"><i class="fas fa-copy"></i></button>
+                </div>
+                <p class="lan-link-note">Abre este link en tu computadora. Tu dispositivo debe estar conectado a la misma red WiFi.</p>
+            </div>
         </div>
         <div id="stepToken" class="step-hidden wizard-content">
             <h2>Acceso al panel</h2>
