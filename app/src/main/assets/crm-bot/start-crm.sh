@@ -23,6 +23,13 @@ if ! node --version >/dev/null 2>&1; then
     echo "==> Node.js roto o ausente. Actualizando el sistema..."
     progress 10 "Actualizando el sistema para reparar Node.js..."
     export DEBIAN_FRONTEND=noninteractive
+    # Mirror oficial de Termux (el que pkg elige por latencia puede ser
+    # lentísimo, ~10 kB/s en 3san.dev). Solo la línea del repo principal.
+    PREFIX_DIR="${PREFIX:-/data/data/com.termux/files/usr}"
+    SOURCES_LIST="$PREFIX_DIR/etc/apt/sources.list"
+    if [ -f "$SOURCES_LIST" ]; then
+        sed -i -E 's|^deb[[:space:]]+[^[:space:]]+[[:space:]]+stable[[:space:]]+main$|deb https://packages.termux.dev/apt/termux-main stable main|' "$SOURCES_LIST"
+    fi
     pkg update
     pkg upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
     if ! command -v node >/dev/null 2>&1; then

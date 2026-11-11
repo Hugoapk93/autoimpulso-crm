@@ -22,6 +22,15 @@ progress 5 "Preparando la instalación..."
 # las opciones de dpkg evitan la pregunta de los archivos de configuración
 # (la que pide Y/I/N/O/D/Z). Sin esto, pkg upgrade se queda esperando.
 export DEBIAN_FRONTEND=noninteractive
+# Mirror oficial de Termux, antes de actualizar: el mirror que pkg elige
+# solo por latencia puede ser lentísimo (~10 kB/s en 3san.dev, y hasta
+# desactualizado) aunque el internet sea bueno. El oficial baja a MB/s.
+# Solo se cambia la línea del repo principal; los demás repos no se tocan.
+PREFIX_DIR="${PREFIX:-/data/data/com.termux/files/usr}"
+SOURCES_LIST="$PREFIX_DIR/etc/apt/sources.list"
+if [ -f "$SOURCES_LIST" ]; then
+    sed -i -E 's|^deb[[:space:]]+[^[:space:]]+[[:space:]]+stable[[:space:]]+main$|deb https://packages.termux.dev/apt/termux-main stable main|' "$SOURCES_LIST"
+fi
 progress 10 "Actualizando la lista de paquetes..."
 pkg update
 progress 15 "Actualizando paquetes del sistema..."
