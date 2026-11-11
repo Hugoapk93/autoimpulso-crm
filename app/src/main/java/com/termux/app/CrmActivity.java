@@ -1,0 +1,427 @@
+package com.termux.app;
+
+import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.res.AssetManager;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toolbar;
+
+import com.termux.R;
+import com.termux.shared.logger.Logger;
+import com.termux.shared.shell.TermuxSession;
+import com.termux.shared.termux.TermuxConstants;
+import com.termux.terminal.TerminalSession;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Launcher activity of the Autoimpulso CRM fork.
+ *
+ * It shows the CRM panel (served by the Node.js bot on http://127.0.0.1:3000) in a
+ * WebView. Behind it, the regular Termux environment keeps running the bot in a
+ * TermuxSession named "crm-bot" (or "crm-setup" during the first-run install).
+ *
+ * The terminal is never hidden away: the "Terminal" menu entry opens the original
+ * {@link TermuxActivity}, which is the place to diagnose the bot if it fails.
+ */
+public class CrmActivity extends Activity implements ServiceConnection {
+
+    private static final String LOG_TAG = "CrmActivity";
+
+    /** Bot home inside Termux: /data/data/com.termux/files/home/crm-bot */
+    private static final String CRM_BOT_DIR = TermuxConstants.TERMUX_HOME_DIR_PATH + "/crm-bot";
+    private static final String BOT_SESSION_NAME = "crm-bot";
+    private static final String SETUP_SESSION_NAME = "crm-setup";
+    private static final String SERVER_URL = "http://127.0.0.1:3000";
+    private static final String STATUS_URL = SERVER_URL + "/api/status";
+
+    private static final int POLL_INTERVAL_MS = 1000;
+    /** Time allowed for the bot to answer when it only needs to be started. */
+    private static final int START_TIMEOUT_MS = 90_000;
+    /** Time allowed on first run (downloads Node.js + npm install need internet). */
+    private static final int SETUP_TIMEOUT_MS = 10 * 60_000;
+
+    private WebView mWebView;
+    private View mLoadingView;
+    private View mErrorView;
+    private TextView mLoadingText;
+    private TextView mErrorText;
+
+    private TermuxService mTermuxService;
+    private boolean mBound = false;
+    private boolean mResumed = false;
+    private boolean mBootstrapDone = false;
+    private volatile boolean mDestroyed = false;
+    private volatile boolean mServerUp = false;
+    private volatile boolean mSetupRunning = false;
+    private Thread mPollThread;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_crm);
+
+        Toolbar toolbar = findViewById(R.id.crm_toolbar);
+        toolbar.setTitle(R.string.application_name);
+        toolbar.setTitleTextColor(0xFFFFFFFF);
+        setActionBar(toolbar);
+
+        mWebView = findViewById(R.id.crm_webview);
+        mLoadingView = findViewById(R.id.crm_loading);
+        mErrorView = findViewById(R.id.crm_error);
+        mLoadingText = findViewById(R.id.crm_loading_text);
+        mErrorText = findViewById(R.id.crm_error_text);
+
+        WebSettings settings = mWebView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        // The panel is served over plain http on loopback and loads https CDN assets.
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        mWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String host = request.getUrl().getHost();
+                if ("127.0.0.1".equals(host) || "localhost".equals(host)) {
+                    // Same panel, stay inside the WebView.
+                    return false;
+                }
+                // Any external link goes to the browser.
+                startActivity(new Intent(Intent.ACTION_VIEW, request.getUrl()));
+                return true;
+            }
+        });
+
+        Button retryButton = findViewById(R.id.crm_retry_button);
+        retryButton.setOnClickListener(v -> retry());
+        Button terminalButton = findViewById(R.id.crm_terminal_button);
+        terminalButton.setOnClickListener(v -> openTerminal());
+
+        showLoading(R.string.crm_loading_connecting);
+
+        // Start the TermuxService so it keeps running even if this activity goes away,
+        // then bind to it to manage the bot session.
+        Intent serviceIntent = new Intent(this, TermuxService.class);
+        startService(serviceIntent);
+        mBound = bindService(serviceIntent, this, Context.BIND_AUTO_CREATE);
+        if (!mBound) {
+            Logger.logError(LOG_TAG, "bindService() failed");
+            showError(getString(R.string.crm_error_service));
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mResumed = true;
+        maybeStartBot();
+    }
+
+    @Override
+    protected void onPause() {
+        mResumed = false;
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        mDestroyed = true;
+        if (mPollThread != null) mPollThread.interrupt();
+        if (mBound) {
+            try {
+                unbindService(this);
+            } catch (IllegalArgumentException e) {
+                Logger.logError(LOG_TAG, "unbindService failed: " + e.getMessage());
+            }
+            mBound = false;
+        }
+        mTermuxService = null;
+        super.onDestroy();
+        // NOTE: the TermuxService is intentionally NOT stopped here: the bot must keep
+        // running in the background after the user leaves the app.
+    }
+
+    @Override
+    public void onServiceConnected(ComponentName componentName, IBinder service) {
+        Logger.logDebug(LOG_TAG, "onServiceConnected");
+        mTermuxService = ((TermuxService.LocalBinder) service).service;
+        maybeStartBot();
+    }
+
+    /**
+     * Start the bot once the service is bound AND the activity is visible: the
+     * bootstrap installer shows a progress dialog, which needs a window token
+     * (same guard as TermuxActivity's mIsVisible).
+     */
+    private void maybeStartBot() {
+        if (!mResumed || mTermuxService == null || mBootstrapDone) return;
+        if (isFinishing() || isDestroyed()) return;
+        mBootstrapDone = true;
+
+        // Installs the bootstrap on first run (shows its own progress dialog) and
+        // calls back immediately if it is already installed.
+        TermuxInstaller.setupBootstrapIfNeeded(CrmActivity.this, this::ensureBotRunning);
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName name) {
+        Logger.logDebug(LOG_TAG, "onServiceDisconnected");
+        mTermuxService = null;
+        mBootstrapDone = false; // Next connection must redo the bot check.
+        if (!mDestroyed) showError(getString(R.string.crm_error_service));
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.crm_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.crm_menu_terminal) {
+            openTerminal();
+            return true;
+        } else if (id == R.id.crm_menu_reload) {
+            retry();
+            return true;
+        } else if (id == R.id.crm_menu_restart_bot) {
+            restartBot();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    /** Make sure the bot is running, then wait for it to answer. */
+    private void ensureBotRunning() {
+        if (mDestroyed || mTermuxService == null) return;
+
+        File botDir = new File(CRM_BOT_DIR);
+        File marker = new File(botDir, ".installed");
+
+        if (!marker.exists()) {
+            setLoadingText(R.string.crm_first_install);
+            if (!copyBotAssets()) {
+                showError(getString(R.string.crm_error_copy));
+                return;
+            }
+            mSetupRunning = true;
+            startBotSession(SETUP_SESSION_NAME, CRM_BOT_DIR + "/setup-crm.sh");
+        } else if (findBotSession() == null) {
+            setLoadingText(R.string.crm_starting_bot);
+            startBotSession(BOT_SESSION_NAME, CRM_BOT_DIR + "/start-crm.sh");
+        } else {
+            setLoadingText(R.string.crm_loading_connecting);
+        }
+
+        startPolling();
+    }
+
+    /** Retry from the error view: re-check the server and restart the bot if needed. */
+    private void retry() {
+        mServerUp = false;
+        mBootstrapDone = false; // Next service connection must redo the bot check.
+        mErrorView.setVisibility(View.GONE);
+        showLoading(R.string.crm_loading_connecting);
+        if (mTermuxService == null) {
+            Intent serviceIntent = new Intent(this, TermuxService.class);
+            startService(serviceIntent);
+            mBound = bindService(serviceIntent, this, Context.BIND_AUTO_CREATE);
+            return;
+        }
+        ensureBotRunning();
+    }
+
+    /** Kill the bot session (if any) and start it again. */
+    private void restartBot() {
+        mServerUp = false;
+        TermuxSession botSession = findBotSession();
+        if (botSession != null && mTermuxService != null) {
+            mTermuxService.removeTermuxSession(botSession.getTerminalSession());
+        }
+        showLoading(R.string.crm_starting_bot);
+        if (mTermuxService != null) {
+            // Forced: removeTermuxSession only asks the session to finish; it leaves
+            // the service list asynchronously, so the existence check would find the
+            // dying session and refuse to start a new one.
+            startBotSession(BOT_SESSION_NAME, CRM_BOT_DIR + "/start-crm.sh", true);
+            startPolling();
+        }
+    }
+
+    private void openTerminal() {
+        startActivity(new Intent(this, TermuxActivity.class));
+    }
+
+    /** Find the running bot session ("crm-bot" or "crm-setup" during first install). */
+    private TermuxSession findBotSession() {
+        if (mTermuxService == null) return null;
+        // getTermuxSessions() returns the live list; snapshot it: a session can exit
+        // (and remove itself) on another thread while we iterate.
+        List<TermuxSession> sessions = new ArrayList<>(mTermuxService.getTermuxSessions());
+        for (TermuxSession session : sessions) {
+            if (session == null) continue;
+            TerminalSession terminalSession = session.getTerminalSession();
+            if (terminalSession == null) continue;
+            String name = terminalSession.mSessionName;
+            if (BOT_SESSION_NAME.equals(name) || SETUP_SESSION_NAME.equals(name)) return session;
+        }
+        return null;
+    }
+
+    /** Start the bot (or its first-run setup) in a background terminal session. */
+    private void startBotSession(String sessionName, String scriptPath) {
+        startBotSession(sessionName, scriptPath, false);
+    }
+
+    private void startBotSession(String sessionName, String scriptPath, boolean force) {
+        if (mTermuxService == null) return;
+        if (!force && findBotSession() != null) return;
+        File script = new File(scriptPath);
+        if (!script.exists()) {
+            Logger.logError(LOG_TAG, "Bot script not found: " + scriptPath);
+            showError(getString(R.string.crm_error_copy));
+            return;
+        }
+        if (!script.canExecute()) script.setExecutable(true);
+        mTermuxService.createTermuxSession(scriptPath, null, null, CRM_BOT_DIR, false, sessionName);
+    }
+
+    /** Poll /api/status until the bot answers (any HTTP status counts: 401/503 also mean "up"). */
+    private void startPolling() {
+        if (mPollThread != null && mPollThread.isAlive()) return;
+        mPollThread = new Thread(() -> {
+            long deadline = System.currentTimeMillis() + (mSetupRunning ? SETUP_TIMEOUT_MS : START_TIMEOUT_MS);
+            while (!mDestroyed && !mServerUp) {
+                if (isServerUp()) {
+                    mServerUp = true;
+                    break;
+                }
+                if (System.currentTimeMillis() > deadline) break;
+                try {
+                    Thread.sleep(POLL_INTERVAL_MS);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            if (mDestroyed) return;
+            runOnUiThread(() -> {
+                if (mServerUp) {
+                    showPanel();
+                } else {
+                    showError(getString(R.string.crm_error_server_down));
+                }
+            });
+        }, "crm-poll");
+        mPollThread.start();
+    }
+
+    private boolean isServerUp() {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(STATUS_URL).openConnection();
+            connection.setConnectTimeout(1500);
+            connection.setReadTimeout(1500);
+            connection.setRequestMethod("GET");
+            // Any HTTP answer means the server is up (401 = token needed, 503 = not ready yet).
+            connection.getResponseCode();
+            return true;
+        } catch (IOException e) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private void showPanel() {
+        mLoadingView.setVisibility(View.GONE);
+        mErrorView.setVisibility(View.GONE);
+        mWebView.setVisibility(View.VISIBLE);
+        if (mWebView.getUrl() == null) {
+            mWebView.loadUrl(SERVER_URL + "/");
+        } else {
+            mWebView.reload();
+        }
+    }
+
+    private void showLoading(int textResId) {
+        mErrorView.setVisibility(View.GONE);
+        mWebView.setVisibility(View.GONE);
+        mLoadingView.setVisibility(View.VISIBLE);
+        setLoadingText(textResId);
+    }
+
+    private void setLoadingText(int textResId) {
+        if (mLoadingText != null) mLoadingText.setText(textResId);
+    }
+
+    private void showError(String message) {
+        mLoadingView.setVisibility(View.GONE);
+        mWebView.setVisibility(View.GONE);
+        mErrorText.setText(message);
+        mErrorView.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * Copy the bot from assets/crm-bot to $HOME/crm-bot.
+     * Files that already exist are NOT overwritten: if Hugo migrated his own bot
+     * (with its data/ and .env), the fork keeps his files and only adds the missing
+     * ones (setup-crm.sh, start-crm.sh, …).
+     */
+    private boolean copyBotAssets() {
+        try {
+            File botDir = new File(CRM_BOT_DIR);
+            if (!botDir.exists() && !botDir.mkdirs()) return false;
+            copyAssetPath("crm-bot", botDir);
+            for (String script : new String[]{"setup-crm.sh", "start-crm.sh"}) {
+                File scriptFile = new File(botDir, script);
+                if (scriptFile.exists()) scriptFile.setExecutable(true);
+            }
+            return true;
+        } catch (IOException e) {
+            Logger.logError(LOG_TAG, "copyBotAssets failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void copyAssetPath(String assetPath, File dest) throws IOException {
+        AssetManager assets = getAssets();
+        String[] list = assets.list(assetPath);
+        if (list != null && list.length > 0) {
+            if (!dest.exists()) dest.mkdirs();
+            for (String name : list) {
+                copyAssetPath(assetPath + "/" + name, new File(dest, name));
+            }
+        } else {
+            if (dest.exists()) return; // Never overwrite the user's bot files.
+            try (InputStream in = assets.open(assetPath);
+                 OutputStream out = new FileOutputStream(dest)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+            }
+        }
+    }
+}

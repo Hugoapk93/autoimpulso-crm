@@ -2,7 +2,7 @@
 
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.termux">
-    <!ENTITY TERMUX_APP_NAME "Termux">
+    <!ENTITY TERMUX_APP_NAME "Autoimpulso CRM">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
     <!ENTITY TERMUX_FLOAT_APP_NAME "Termux:Float">
@@ -15,6 +15,19 @@
 
     <string name="application_name">&TERMUX_APP_NAME;</string>
     <string name="shared_user_label">&TERMUX_APP_NAME; user</string>
+
+    <!-- Autoimpulso CRM launcher activity -->
+    <string name="crm_loading_connecting">Conectando con el servidor…</string>
+    <string name="crm_first_install">Primera instalación: copiando el bot e instalando Node.js. Esto puede tardar varios minutos y necesita internet una sola vez…</string>
+    <string name="crm_starting_bot">Arrancando el bot…</string>
+    <string name="crm_error_server_down">El servidor del bot no respondió. Abre la terminal para ver el error del bot.</string>
+    <string name="crm_error_copy">No se pudo copiar el bot. Abre la terminal para diagnosticar.</string>
+    <string name="crm_error_service">No se pudo conectar con el servicio de Termux.</string>
+    <string name="crm_error_retry">Reintentar</string>
+    <string name="crm_error_terminal">Abrir terminal</string>
+    <string name="crm_menu_terminal">Terminal</string>
+    <string name="crm_menu_reload">Recargar panel</string>
+    <string name="crm_menu_restart_bot">Reiniciar bot</string>
 
 
 

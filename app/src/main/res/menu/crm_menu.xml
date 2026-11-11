@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/crm_menu_terminal"
+        android:title="@string/crm_menu_terminal"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/crm_menu_reload"
+        android:title="@string/crm_menu_reload"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/crm_menu_restart_bot"
+        android:title="@string/crm_menu_restart_bot"
+        android:showAsAction="never" />
+</menu>

@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Autoimpulso CRM</title>
+
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <meta name="theme-color" content="#050505">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Autoimpulso CRM">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="/css/styles.css">
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+</head>
+<body>
+
+    <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+    <div id="inAppNotify"><span id="notifyText"></span></div>
+    <div id="toast-container"></div>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMenu()"></div>
+
+    <!-- PANTALLA DE CARGA / WIZARD -->
+    <div id="setupWizard" class="step-hidden">
+        <div id="stepLoading" class="wizard-content">
+            <img src="logo.png" alt="Autoimpulso Marketing" class="wizard-logo">
+            <p class="wizard-brand">Autoimpulso Marketing</p>
+            <i class="fas fa-circle-notch fa-spin loading-icon"></i>
+            <p class="loading-text">Conectando...</p>
+        </div>
+        <div id="stepQR" class="step-hidden wizard-content">
+            <h2>Vincular</h2>
+            <div class="qr-container">
+                <canvas id="qrCanvas"></canvas>
+            </div>
+            <p class="qr-success-text"><i class="fas fa-mobile-alt"></i> Escanea el código QR</p>
+        </div>
+        <div id="stepToken" class="step-hidden wizard-content">
+            <h2>Acceso al panel</h2>
+            <p class="qr-success-text" id="tokenStepMsg">Escribe el token de la API.</p>
+            <input type="password" id="apiTokenInput" placeholder="Token de la API"
+                   style="width: 100%; max-width: 320px; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-main); font-size: 1rem; margin: 12px 0;"
+                   onkeypress="if(event.key==='Enter') submitApiToken()">
+            <br>
+            <button id="tokenStepBtn" onclick="submitApiToken()" style="background: var(--primary-gradient); color: white; border: none; padding: 10px 28px; border-radius: 20px; font-weight: 600; cursor: pointer; font-size: 1rem;">Conectar</button>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 14px;">Es el mismo valor de <b>API_TOKEN</b> en el archivo .env del servidor.<br>Se guarda solo en este navegador.</p>
+        </div>
+    </div>
+
+    <!-- APLICACIÓN PRINCIPAL -->
+    <div id="mainApp">
+        <!-- BARRA LATERAL -->
+        <div class="sidebar" id="sidebar">
+            <div class="brand">
+                <img src="logo.png" alt="Autoimpulso Marketing" class="brand-logo">
+                <div class="brand-text">
+                    <div class="brand-name">AUTOIMPULSO</div>
+                    <div class="brand-sub">CRM · WhatsApp</div>
+                </div>
+            </div>
+            <div class="menu">
+                <div class="menu-label">Menú</div>
+                <div class="menu-item active" id="defaultMenuBtn" onclick="nav('activity', this)">
+                    <i class="fas fa-desktop"></i> Chats
+                </div>
+                <div class="menu-item" onclick="nav('flow', this)">
+                    <i class="fas fa-project-diagram"></i> Flujo del Bot
+                </div>
+                <div class="menu-item" onclick="nav('keywords', this)">
+                    <i class="fas fa-bolt"></i> Preguntas frecuentes
+                </div>
+                <div class="menu-item" onclick="nav('agenda', this)">
+                    <i class="far fa-calendar-alt"></i> Agenda
+                </div>
+                <div class="menu-item" onclick="nav('config', this)">
+                    <i class="fas fa-cog"></i> Configuración
+                </div>
+            </div>
+            <div class="sidebar-foot">
+                <div class="menu-item logout" onclick="requestLogout()">
+                    <i class="fas fa-power-off"></i> Salir
+                </div>
+                <div class="menu-item" id="installAppBtn" onclick="installPWA()">
+                    <i class="fas fa-download"></i> Instalar App
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <div class="content">
+            <div class="mobile-header">
+                <img src="logo.png" alt="Autoimpulso Marketing" class="brand-logo">
+                <div class="brand-text">
+                    <div class="brand-name">AUTOIMPULSO</div>
+                </div>
+                <button class="mobile-menu-btn" onclick="toggleMenu()"><i class="fas fa-bars"></i></button>
+            </div>
+
+            <!-- VISTA: CHATS (MONITOR) -->
+            <div id="view-activity" class="view active">
+                <div class="wa-list-col">
+                    <div id="waHeaderSearch" class="wa-search-bar">
+                        <div class="search-input-container">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" class="wa-search-input" name="search_box_rndm" placeholder="Buscar chat..." 
+                                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                   readonly onfocus="this.removeAttribute('readonly');"
+                                   onkeyup="debounceFilterChats(this.value)">
+                        </div>
+                    </div>
+
+                    <div id="waHeaderSelection" class="wa-selection-header" style="display:none;">
+                        <div class="selection-actions">
+                            <i class="fas fa-arrow-left icon-btn" onclick="exitSelectionMode()"></i>
+                            <span id="waSelectionCount" class="selection-count">0</span>
+                        </div>
+                        <i class="fas fa-trash icon-btn text-danger" onclick="deleteSelectedChats()"></i>
+                    </div>
+
+                    <div id="waChatList" class="wa-list-container"></div>
+                </div>
+
+                <div id="waMainChat" class="wa-chat-col">
+                    <div class="wa-chat-header">
+                        <div class="chat-header-info">
+                            <i class="fas fa-arrow-left wa-back-btn icon-btn" onclick="closeWaChat()"></i>
+                            <div class="wa-avatar" id="waHeaderAvatar">?</div>
+                            <div class="chat-meta-container">
+                                <div class="chat-name-row">
+                                    <div id="waHeaderName" class="wa-name">Selecciona un chat</div>
+                                    <button onclick="editCurrentContactManual()" class="edit-name-btn" title="Editar contacto">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                </div>
+                                <div id="waHeaderPhone" class="wa-meta">toca para ver info</div>
+                            </div>
+                        </div>
+
+                        <div class="chat-header-actions">
+                            <label class="switch compact-switch">
+                                <input type="checkbox" id="waBotSwitch" onchange="toggleCurrentBot(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="waMsgContainer" class="wa-msgs-area">
+                        <div class="empty-chat-state">
+                            <i class="fas fa-comments empty-chat-icon"></i>
+                            <p>Selecciona un contacto para ver el historial y controlar el flujo.</p>
+                        </div>
+                    </div>
+
+                    <div id="waFlowDrawer"></div>
+                    <div id="waQuickReplies"></div>
+
+                    <div class="wa-input-area" id="waInputArea" style="display:none;">
+                        <div class="wa-input-pill" id="waInputPill">
+                            <input type="text" id="waInput" name="chat_box_rndm" placeholder="Escribe un mensaje..." 
+                                   autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" 
+                                   readonly onfocus="this.removeAttribute('readonly');"
+                                   oninput="handleInputTyping()">
+
+                            <label for="chatImgUpload" class="chat-attach-btn">
+                                <i class="fas fa-paperclip" title="Adjuntar archivo"></i>
+                            </label>
+                            <input type="file" id="chatImgUpload" accept="image/*" class="hidden-input" onchange="uploadChatMedia(this)">
+
+                            <i class="fas fa-camera hide-on-type chat-icon-btn" title="Cámara" onclick="document.getElementById('chatImgUpload').click()"></i>
+                            <i class="fas fa-bolt hide-on-type chat-icon-btn" onclick="toggleFlowDrawer()" title="Respuestas Rápidas"></i>
+                        </div>
+
+                        <button class="wa-main-btn" id="waMainBtn" onclick="handleMainBtn()">
+                            <i class="fas fa-microphone" id="waMainIcon"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA: RESPUESTAS RÁPIDAS -->
+            <div id="view-keywords" class="view" style="padding: 0; background: var(--bg-global); overflow-y: auto;">
+                
+                <!-- HEADER NATIVO (Sticky / Pegajoso) -->
+                <div class="view-header">
+                    
+                    <div class="icon-header" style="margin: 0; gap: 12px;">
+                        <div class="icon-box" style="background: rgba(234, 179, 8, 0.1); color: #eab308;">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <div>
+                            <h4 class="view-header-title">Respuestas Rápidas</h4>
+                            <p class="view-header-sub">Responde dudas sin romper el flujo</p>
+                        </div>
+                    </div>
+                    
+                    <button onclick="openKeywordModal()" class="vh-btn-primary" title="Nueva respuesta">
+                        <i class="fas fa-plus"></i> Nueva
+                    </button>
+                    
+                </div>
+
+                <!-- CONTENEDOR DE LA LISTA -->
+                <div class="view-body">
+                    <div id="keywordsList" class="grid-list">
+                        <!-- Aquí JavaScript inyecta las tarjetas de respuestas -->
+                    </div>
+                </div>
+
+                <!-- BOTÓN FLOTANTE (solo móvil): agregar respuesta rápida -->
+                <button class="view-fab view-fab-fixed" onclick="openKeywordModal()" title="Nueva respuesta">
+                    <i class="fas fa-plus"></i>
+                </button>
+                
+            </div>
+
+            <!-- VISTA: FLUJO DEL BOT -->
+            <div id="view-flow" class="view" style="padding: 0; background: var(--bg-global); overflow-y: auto;">
+                
+                <!-- HEADER NATIVO (Sticky / Pegajoso) -->
+                <div class="view-header view-header-flow">
+                    
+                    <!-- Fila Superior: Título y Botones de Acción -->
+                    <div class="view-header-row">
+                        <div class="icon-header" style="margin: 0; gap: 12px;">
+                            <div class="icon-box" style="background: rgba(168, 85, 247, 0.1); color: #a855f7;">
+                                <i class="fas fa-project-diagram"></i>
+                            </div>
+                            <div>
+                                <h4 class="view-header-title">Flujo del Bot</h4>
+                                <p class="view-header-sub">Diseña la conversación</p>
+                            </div>
+                        </div>
+                        
+                        <!-- CONTENEDOR DE BOTONES (Ver todos + Nuevo Paso) -->
+                        <div class="view-header-actions">
+                            <button id="btnToggleFlowView" onclick="toggleFlowView()" class="vh-btn-ghost" title="Ver todos los pasos">
+                                <i class="fas fa-list"></i> Ver Todos
+                            </button>
+                            
+                            <button onclick="createNewStepPrompt()" class="vh-btn-primary" title="Nuevo paso">
+                                <i class="fas fa-plus"></i> Paso
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Fila Inferior: Navegación de Migas de Pan (Breadcrumbs) -->
+                    <div id="breadcrumbNav" class="flow-nav" style="margin: 0; padding-bottom: 5px;">
+                        <!-- JavaScript inyecta la navegación aquí -->
+                    </div>
+                    
+                </div>
+
+                <!-- CONTENEDOR DE LA LISTA DE PASOS -->
+                <div class="view-body">
+                    <div id="stepsListContainer" style="display: flex; flex-direction: column;">
+                        <!-- Aquí JavaScript inyecta las tarjetas de los pasos (.flow-step-card) -->
+                    </div>
+                </div>
+
+                <!-- BOTONES FLOTANTES (solo móvil): la tuerca abre/cierra el menú;
+                     arriba se despliegan el + (verde) y Ver Todos (blanco, como la tuerca) -->
+                <div class="flow-fab" id="flowFab">
+                    <button class="flow-fab-item flow-fab-add" onclick="flowFabAddClick()" title="Nuevo paso">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="flow-fab-item flow-fab-secondary" onclick="flowFabViewAllClick()" title="Ver todos los pasos">
+                        <i class="fas fa-list" id="flowFabViewIcon"></i>
+                    </button>
+                    <button class="flow-fab-secondary" id="flowFabMain" onclick="toggleFlowFab()" title="Opciones de flujo">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+                
+            </div>
+
+            <!-- VISTA: AGENDA -->
+            <div id="view-agenda" class="view" style="padding: 0; background: var(--bg-global); overflow-y: auto;">
+    
+                <!-- 1. CALENDARIO INTEGRADO (Arriba, de borde a borde) -->
+                <div style="background: var(--bg-input); padding-bottom: 15px; border-bottom: 1px solid var(--border-glass);">
+        
+                    <!-- Encabezado con Botón de Ajustes -->
+                    <div class="calendar-header" style="position: relative; padding: 15px 20px; margin-bottom: 0; display: flex; justify-content: center; align-items: center;">
+                        
+                        <!-- Controles de Mes (Centrados) -->
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <button class="calendar-nav-btn" onclick="changeMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                            <h3 id="monthDisplay" class="calendar-title" style="margin: 0; font-size: 1.15rem; min-width: 140px; text-align: center;"></h3>
+                            <button class="calendar-nav-btn" onclick="changeMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+
+                        <!-- Tuerquita (Fijada a la derecha de la pantalla) -->
+                        <button onclick="toggleCalendarSettings()" class="admin-btn" style="position: absolute; right: 20px; padding: 8px; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border-glass);">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+
+                    <!-- Panel de Ajustes del Calendario (Oculto por defecto) -->
+                    <div id="calendarSettingsPanel" style="display: none; padding: 10px 20px 20px 20px; background: rgba(148, 163, 184, 0.05); border-bottom: 1px solid var(--border-glass); margin-bottom: 15px;">
+                        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 140px;">
+                                <label class="input-label" style="margin-bottom: 8px;">Iniciar semana en:</label>
+                                <select id="calStartDay" class="clean-select" style="background: var(--bg-input); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-glass); height: auto;" onchange="updateCalendarConfig()">
+                                    <option value="0">Domingo</option>
+                                    <option value="1">Lunes</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1; min-width: 140px; display: flex; flex-direction: column; justify-content: flex-end;">
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0;">
+                                    <label class="switch compact-switch" style="margin:0;">
+                                        <input type="checkbox" id="calWeekNumbers" onchange="updateCalendarConfig()">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <span style="font-size: 0.85rem; color: var(--text-main); font-weight: 500;">N° de Semana</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+        
+                    <div id="calendarDaysHeader" class="calendar-grid" style="padding: 0 10px; opacity: 0.6; font-size: 0.75rem; font-weight: 600; background: transparent; border: none;">
+                        <!-- JS inyectará los días de la semana aquí dependiendo de si empieza en Lunes o Domingo -->
+                    </div>
+        
+                    <div id="calendarDays" class="calendar-grid" style="padding: 10px; gap: 6px; background: transparent; border: none;"></div>
+                </div>
+
+                <!-- 2. BOTONES Y AJUSTES -->
+                <div style="margin-top: 25px; margin-bottom: 40px; background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+        
+                    <!-- Cabecera del Recordatorio -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px;">
+                        <div class="icon-header" style="margin: 0;">
+                            <div class="icon-box info-box" style="margin-right: 15px; width: 40px; height: 40px;">
+                                <i class="fas fa-robot text-primary"></i>
+                            </div>
+                            <div>
+                                <h4 style="margin: 0; font-size: 1.05rem;">Recordatorio Automático</h4>
+                                <p id="schedStatusText" style="margin: 3px 0 0 0; font-size: 0.85rem; color: var(--text-muted);">Desactivado</p>
+                            </div>
+                        </div>
+                        <label class="switch compact-switch">
+                            <input type="checkbox" id="schActive" onchange="toggleSchedulerUI(); saveSchedulerConfig()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Panel de Configuración Oculto -->
+                    <div id="schedulerConfig" style="display:none; padding: 0 20px 20px 20px; border-top: 1px solid var(--border-glass); background: transparent;">
+                        <!-- 🔥 FIX: Cambiamos a flex-direction: column para que tengan el 100% de ancho 🔥 -->
+                        <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+                
+                            <div>
+                                <label class="input-label" style="font-size: 0.85rem;"><i class="far fa-clock"></i> Hora de envío</label>
+                                <input type="time" id="schTime" class="clean-time-input" style="width: 100%; box-sizing: border-box; background: rgba(148, 163, 184, 0.08); padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); height: auto;" onclick="if(this.showPicker) this.showPicker();" onchange="saveSchedulerConfig()">
+                            </div>
+
+                            <div>
+                                <label class="input-label" style="font-size: 0.85rem;"><i class="fas fa-route"></i> Mover a:</label>
+                                <!-- Se añadió height: auto y padding más generoso -->
+                                <select id="schStepSelect" class="clean-select" style="width: 100%; box-sizing: border-box; background: rgba(148, 163, 184, 0.08); padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); height: auto; cursor: pointer;" onchange="saveSchedulerConfig()">
+                                    <option value="">-- Seleccionar --</option>
+                                </select>
+                            </div>
+
+                        </div>
+                        <p class="info-text" style="margin: 15px 0 0 0; text-align: center;"><i class="fas fa-info-circle"></i> Los cambios se guardan automáticamente.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 🔥 CONFIGURACIÓN -->
+            <div id="view-config" class="view" style="padding: 0; background: var(--bg-global); overflow-x: hidden; position: relative;">
+    
+                <!-- HEADER FIJO -->
+                <div class="view-header">
+                    <div id="settingsBackBtn" style="display: none; cursor: pointer; margin-right: 15px; color: var(--primary); font-size: 1.2rem;" onclick="closeSettingsPanel()">
+                        <i class="fas fa-chevron-left"></i>
+                    </div>
+                    <div class="icon-header" style="margin: 0; gap: 12px;">
+                        <div class="icon-box" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
+                            <i class="fas fa-cog"></i>
+                        </div>
+                        <div>
+                            <h4 id="settingsMainTitle" class="view-header-title">Configuración</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTENEDOR DE TRANSICIÓN -->
+                <div id="settingsContainer" style="position: relative; width: 100%; height: calc(100vh - 150px); overflow: hidden;">
+        
+                    <!-- ============================================== -->
+                    <!-- 1. MENÚ PRINCIPAL DE AJUSTES                   -->
+                    <!-- ============================================== -->
+                    <div id="settingsMenu" class="settings-panel active" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+            
+                        <div style="padding: 20px 20px 8px 20px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Preferencias</div>
+                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+                
+                            <!-- Botón: Sistema y Apariencia -->
+                            <div class="settings-list-item" onclick="openSettingsPanel('panel-sistema', 'Sistema y Apariencia')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
+                                <div style="display:flex; align-items:center; gap: 15px;">
+                                    <i class="fas fa-mobile-alt text-main" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
+                                    <span style="font-weight: 500; font-size: 1rem;">Sistema y Apariencia</span>
+                                </div>
+                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                            </div>
+
+                            <!-- Botón: Información del Negocio -->
+                            <div class="settings-list-item" onclick="openSettingsPanel('panel-negocio', 'Información del Negocio')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
+                                <div style="display:flex; align-items:center; gap: 15px;">
+                                    <i class="fas fa-store text-main" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
+                                    <span style="font-weight: 500; font-size: 1rem;">Información del Negocio</span>
+                                </div>
+                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                            </div>
+
+                            <!-- Botón: Horarios de Atención -->
+                            <div class="settings-list-item" onclick="openSettingsPanel('panel-horarios', 'Horarios de Atención')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; cursor: pointer;">
+                                <div style="display:flex; align-items:center; gap: 15px;">
+                                    <i class="far fa-clock text-primary" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
+                                    <span style="font-weight: 500; font-size: 1rem;">Horarios de Atención</span>
+                                </div>
+                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                            </div>
+
+                        </div>
+
+                        <div style="padding: 25px 20px 8px 20px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Personalización del Bot</div>
+                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+                
+                            <!-- Botón: Variables Dinámicas -->
+                            <div class="settings-list-item" onclick="openSettingsPanel('panel-variables', 'Variables Dinámicas')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
+                                <div style="display:flex; align-items:center; gap: 15px;">
+                                    <i class="fas fa-code text-warning" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center; color: #eab308;"></i>
+                                    <span style="font-weight: 500; font-size: 1rem;">Variables Dinámicas</span>
+                                </div>
+                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                            </div>
+
+                            <!-- Botón: Manejo de Errores (IA) -->
+                            <div class="settings-list-item" onclick="openSettingsPanel('panel-errores', 'Manejo de Errores (IA)')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; cursor: pointer;">
+                                <div style="display:flex; align-items:center; gap: 15px;">
+                                    <i class="fas fa-robot text-danger" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center; color: #ef4444;"></i>
+                                    <span style="font-weight: 500; font-size: 1rem;">Manejo de Errores</span>
+                                </div>
+                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- 2. SUB-PANELES (Ocultos a la derecha)          -->
+                    <!-- ============================================== -->
+        
+                    <!-- PANEL: SISTEMA -->
+                    <div id="panel-sistema" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div style="background: var(--bg-input); border-bottom: 1px solid var(--border-glass);">
+                            <!-- Modo Oscuro -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass);">
+                                <div class="icon-header" style="margin: 0; gap: 15px;">
+                                    <div class="icon-box dark-light-box" style="width: 32px; height: 32px; border-radius: 8px; margin: 0;">
+                                        <i class="fas fa-moon text-main" style="font-size: 1rem;"></i>
+                                    </div>
+                                    <div>
+                                        <h4 style="margin: 0; font-size: 1rem; font-weight: 500;">Modo Oscuro</h4>
+                                        <p id="darkModeStatusText" style="margin: 2px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">Apagado</p>
+                                    </div>
+                                </div>
+                                <label class="switch compact-switch" style="margin: 0;">
+                                    <input type="checkbox" id="darkModeSwitch" onchange="toggleDarkMode(this.checked)">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <!-- Zona Horaria -->
+                            <div style="padding: 15px 20px;">
+                                <div class="icon-header" style="margin-bottom: 15px; gap: 15px;">
+                                    <div class="icon-box info-box" style="width: 32px; height: 32px; border-radius: 8px; margin: 0;">
+                                        <i class="fas fa-globe-americas text-primary" style="font-size: 1rem;"></i>
+                                    </div>
+                                    <div>
+                                        <h4 style="margin: 0; font-size: 1rem; font-weight: 500;">Zona Horaria</h4>
+                                    </div>
+                                </div>
+                                <select id="botTimezone" class="clean-select" style="width: 100%; box-sizing: border-box; background: rgba(148, 163, 184, 0.08); padding: 12px 15px; border-radius: 10px; font-size: 0.95rem; border: 1px solid var(--border-glass);" onchange="previewTimezone(); saveTimezone();">
+                                    <option value="America/Matamoros">Frontera Noreste (Reynosa / Matamoros)</option>
+                                    <option value="America/Monterrey">Centro de México (Monterrey / CDMX)</option>
+                                    <option value="America/Mazatlan">Pacífico (Mazatlán / Chihuahua)</option>
+                                    <option value="America/Tijuana">Noroeste (Tijuana / Ensenada)</option>
+                                    <option value="America/Bogota">Colombia / Perú / Ecuador</option>
+                                    <option value="America/Argentina/Buenos_Aires">Argentina</option>
+                                    <option value="UTC">Universal (UTC)</option>
+                                </select>
+                                <div id="tzPreview" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px; margin-left: 5px;"><i class="far fa-clock"></i> Cargando hora...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: NEGOCIO -->
+                    <div id="panel-negocio" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <p class="info-text" style="padding: 0 20px; margin-top: 15px;"><i class="fas fa-info-circle"></i> Completa estos datos. Podrás usarlos en los mensajes de tu bot escribiendo <b>{{negocio}}</b>, etc.</p>
+                        
+                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass); padding: 20px;">
+                            
+                            <div class="mb-15">
+                                <label class="input-label">Nombre del Negocio <span style="color:var(--primary); font-weight:bold; margin-left:8px; font-size: 0.95rem;">{{negocio}}</span></label>
+                                <input type="text" id="bizNameInput" class="full-width" placeholder="Ej: Elektra Motos Reynosa" style="background: var(--bg-global); border: 1px solid var(--border-glass); padding: 12px; border-radius: 8px; color: var(--text-main);" onchange="saveSettings()">
+                            </div>
+
+                            <div class="mb-15">
+                                <label class="input-label">Asesor / Vendedor <span style="color:var(--primary); font-weight:bold; margin-left:8px; font-size: 0.95rem;">{{asesor}}</span></label>
+                                <input type="text" id="bizAdvisorInput" class="full-width" placeholder="Ej: Hugo Martínez" style="background: var(--bg-global); border: 1px solid var(--border-glass); padding: 12px; border-radius: 8px; color: var(--text-main);" onchange="saveSettings()">
+                            </div>
+
+                            <div>
+                                <label class="input-label">Ubicación / Sucursal <span style="color:var(--primary); font-weight:bold; margin-left:8px; font-size: 0.95rem;">{{ubicacion}}</span></label>
+                                <textarea id="bizAddressInput" rows="2" class="full-width" placeholder="Ej: Sucursal Centro, Plaza Principal..." style="background: var(--bg-global); border: 1px solid var(--border-glass); padding: 12px; border-radius: 8px; color: var(--text-main); font-family: inherit;" onchange="saveSettings()"></textarea>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- PANEL: HORARIOS -->
+                    <div id="panel-horarios" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <p class="info-text" style="padding: 0 20px; margin-top: 15px;"><i class="fas fa-info-circle"></i> Configura los días y horarios en los que el bot permitirá agendar citas.</p>
+                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+                
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(1, 'Lunes')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName1" style="font-weight:500; font-size:1rem;">Lunes</span>
+                                    <span id="daySummary1" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 18:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay1" onchange="toggleDayColor(1, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart1"><input type="hidden" id="schEnd1"><input type="hidden" id="schMsg1">
+                            </div>
+                
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(2, 'Martes')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName2" style="font-weight:500; font-size:1rem;">Martes</span>
+                                    <span id="daySummary2" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 18:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay2" onchange="toggleDayColor(2, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart2"><input type="hidden" id="schEnd2"><input type="hidden" id="schMsg2">
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(3, 'Miércoles')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName3" style="font-weight:500; font-size:1rem;">Miércoles</span>
+                                    <span id="daySummary3" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 18:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay3" onchange="toggleDayColor(3, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart3"><input type="hidden" id="schEnd3"><input type="hidden" id="schMsg3">
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(4, 'Jueves')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName4" style="font-weight:500; font-size:1rem;">Jueves</span>
+                                    <span id="daySummary4" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 18:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay4" onchange="toggleDayColor(4, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart4"><input type="hidden" id="schEnd4"><input type="hidden" id="schMsg4">
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(5, 'Viernes')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName5" style="font-weight:500; font-size:1rem;">Viernes</span>
+                                    <span id="daySummary5" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 18:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay5" onchange="toggleDayColor(5, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart5"><input type="hidden" id="schEnd5"><input type="hidden" id="schMsg5">
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;" onclick="openScheduleModal(6, 'Sábado')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName6" style="font-weight:500; font-size:1rem;">Sábado</span>
+                                    <span id="daySummary6" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">09:00 - 14:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay6" onchange="toggleDayColor(6, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart6"><input type="hidden" id="schEnd6"><input type="hidden" id="schMsg6">
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; cursor: pointer;" onclick="openScheduleModal(0, 'Domingo')">
+                                <div style="display:flex; flex-direction:column; pointer-events: none;">
+                                    <span id="dayName0" style="font-weight:500; font-size:1rem;">Domingo</span>
+                                    <span id="daySummary0" style="font-size:0.85rem; color:var(--text-muted); opacity: 0.8;">10:00 - 14:00</span>
+                                </div>
+                                <div style="display:flex; align-items:center;" onclick="event.stopPropagation()">
+                                    <label class="switch compact-switch"><input type="checkbox" id="schDay0" onchange="toggleDayColor(0, this); saveSettings()"><span class="slider"></span></label>
+                                    <i class="fas fa-chevron-right" style="margin-left: 15px; opacity: 0.3; pointer-events: none;"></i>
+                                </div>
+                                <input type="hidden" id="schStart0"><input type="hidden" id="schEnd0"><input type="hidden" id="schMsg0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: VARIABLES -->
+                    <div id="panel-variables" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px;">
+                            <p class="info-text no-margin"><i class="fas fa-info-circle"></i> Textos reutilizables en tu flujo.</p>
+                            <button onclick="addCustomVarRow()" style="background: var(--primary-gradient); color: white; border: none; padding: 8px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; font-size: 0.85rem; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.2);"><i class="fas fa-plus"></i> Nueva</button>
+                        </div>
+            
+                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass); min-height: 50px;">
+                            <div id="customVarsContainer" style="padding: 10px 20px;">
+                                <!-- Renderizado por JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: ERRORES IA -->
+                    <div id="panel-errores" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); background: var(--bg-input);">
+                            <div class="icon-header" style="margin: 0; gap: 15px;">
+                                <div class="icon-box" style="width: 32px; height: 32px; border-radius: 8px; margin: 0; background: rgba(239, 68, 68, 0.1); color: #ef4444;">
+                                    <i class="fas fa-shield-alt" style="font-size: 1rem;"></i>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0; font-size: 1rem; font-weight: 500;">Validaciones Activas</h4>
+                                </div>
+                            </div>
+                            <label class="switch compact-switch" style="margin: 0;">
+                                <input type="checkbox" id="errActiveSwitch" onchange="saveGlobalErrors()" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+            
+                        <div style="background: var(--bg-input); padding-bottom: 20px;">
+                            <div class="editor-tabs" style="border-bottom: 1px solid var(--border-glass); padding: 0; margin-bottom: 15px; display:flex;">
+                                <button class="tab-btn active" id="tabErrBtn-menu" onclick="switchErrTab('menu')" style="flex: 1; text-align: center; border-radius:0; padding: 12px 5px; font-size: 0.85rem;"><i class="fas fa-list"></i> Menú</button>
+                                <button class="tab-btn" id="tabErrBtn-name" onclick="switchErrTab('name')" style="flex: 1; text-align: center; border-radius:0; padding: 12px 5px; font-size: 0.85rem;"><i class="fas fa-user"></i> Nombre</button>
+                                <button class="tab-btn" id="tabErrBtn-date" onclick="switchErrTab('date')" style="flex: 1; text-align: center; border-radius:0; padding: 12px 5px; font-size: 0.85rem;"><i class="far fa-calendar-alt"></i> Fecha</button>
+                                <button class="tab-btn" id="tabErrBtn-media" onclick="switchErrTab('media')" style="flex: 1; text-align: center; border-radius:0; padding: 12px 5px; font-size: 0.85rem;"><i class="fas fa-photo-video"></i> Media</button>
+                            </div>
+
+                            <!-- Tab: Menús -->
+                            <div id="tabErrContent-menu" class="tab-content" style="display:block; padding: 0 20px;">
+                                <p class="info-text mb-15" style="margin-top:0;"><i class="fas fa-info-circle"></i> Cuando el cliente no elige una opción numérica válida.</p>
+                                <div class="form-row mb-15">
+                                    <div style="flex:1;">
+                                        <label class="input-label">Límite</label>
+                                        <select id="menuErrTries" class="clean-select" style="background: rgba(148,163,184,0.08); padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass);" onchange="saveGlobalErrors()">
+                                            <option value="1">1 Intento</option>
+                                            <option value="2">2 Intentos</option>
+                                            <option value="3">3 Intentos</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label class="input-label">Mover a:</label>
+                                        <input id="menuErrFallback" list="stepsList" class="uppercase-input" style="width:100%; box-sizing:border-box; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background:var(--bg-input);" placeholder="Ej: ASESOR" onchange="saveGlobalErrors()">
+                                    </div>
+                                </div>
+                    
+                                <label class="input-label mt-10">Mensaje de Error 1</label>
+                                <textarea id="globErrMsgMenu1" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ Disculpa, no entendí." onchange="saveGlobalErrors()"></textarea>
+                    
+                                <label class="input-label">Mensaje de Error 2</label>
+                                <textarea id="globErrMsgMenu2" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ Opción inválida." onchange="saveGlobalErrors()"></textarea>
+                    
+                                <label class="input-label">Mensaje de Error 3</label>
+                                <textarea id="globErrMsgMenu3" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ Último intento..." onchange="saveGlobalErrors()"></textarea>
+                            </div>
+
+                            <!-- Tab: Nombres -->
+                            <div id="tabErrContent-name" class="tab-content" style="display:none; padding: 0 20px;">
+                                <p class="info-text mb-15" style="margin-top:0;"><i class="fas fa-info-circle"></i> Cuando el cliente pone números o símbolos en su nombre.</p>
+                                <div class="form-row mb-15">
+                                    <div style="flex:1;">
+                                        <label class="input-label">Límite</label>
+                                        <select id="nameErrTries" class="clean-select" style="background: rgba(148,163,184,0.08); padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass);" onchange="saveGlobalErrors()">
+                                            <option value="1">1 Intento</option><option value="2">2 Intentos</option><option value="3">3 Intentos</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label class="input-label">Mover a:</label>
+                                        <input id="nameErrFallback" list="stepsList" class="uppercase-input" style="width:100%; box-sizing:border-box; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background:var(--bg-input);" placeholder="Ej: ASESOR" onchange="saveGlobalErrors()">
+                                    </div>
+                                </div>
+                                <label class="input-label mt-10">Error 1</label><textarea id="globErrMsgName1" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                                <label class="input-label">Error 2</label><textarea id="globErrMsgName2" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                                <label class="input-label">Error 3</label><textarea id="globErrMsgName3" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                            </div>
+
+                            <!-- Tab: Fechas -->
+                            <div id="tabErrContent-date" class="tab-content" style="display:none; padding: 0 20px;">
+                                <p class="info-text mb-15" style="margin-top:0;"><i class="fas fa-info-circle"></i> Cuando el formato de fecha es incorrecto.</p>
+                                <div class="form-row mb-15">
+                                    <div style="flex:1;">
+                                        <label class="input-label">Límite</label>
+                                        <select id="dateErrTries" class="clean-select" style="background: rgba(148,163,184,0.08); padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass);" onchange="saveGlobalErrors()">
+                                            <option value="1">1 Intento</option><option value="2">2 Intentos</option><option value="3">3 Intentos</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label class="input-label">Mover a:</label>
+                                        <input id="dateErrFallback" list="stepsList" class="uppercase-input" style="width:100%; box-sizing:border-box; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background:var(--bg-input);" placeholder="Ej: ASESOR" onchange="saveGlobalErrors()">
+                                    </div>
+                                </div>
+                                <label class="input-label mt-10">Error 1</label><textarea id="globErrMsgDate1" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                                <label class="input-label">Error 2</label><textarea id="globErrMsgDate2" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                                <label class="input-label">Error 3</label><textarea id="globErrMsgDate3" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" onchange="saveGlobalErrors()"></textarea>
+                            </div>
+
+                            <!-- Tab: Multimedia -->
+                            <div id="tabErrContent-media" class="tab-content" style="display:none; padding: 0 20px;">
+                                <p class="info-text mb-15" style="margin-top:0;"><i class="fas fa-info-circle"></i> Respuestas enviadas si envía contenido multimedia.</p>
+                                <label class="input-label mt-10">Mensaje al recibir Audio / Nota de Voz</label>
+                                <textarea id="globErrAudio" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ No puedo escuchar audios..." onchange="saveGlobalErrors()"></textarea>
+
+                                <label class="input-label mt-10">Mensaje al recibir Imagen / Video (Sin texto)</label>
+                                <textarea id="globErrImage" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ Por el momento no proceso imágenes..." onchange="saveGlobalErrors()"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- =========================================
+         MODALES GLOBALES
+         ========================================= -->
+
+    <!-- 🔥 MODAL PARA EL HORARIO POR DÍA -->
+    <div class="modal" id="scheduleModal">
+        <div class="sheet">
+            <div class="modal-header-flex">
+                <h3 id="scheduleModalTitle" class="no-margin">Configurar Lunes</h3>
+                <button onclick="closeScheduleModal()" class="close-modal-btn">&times;</button>
+            </div>
+            
+            <input type="hidden" id="currentEditDay">
+            
+            <div class="form-row mt-15 mb-15">
+                <div class="flex-1">
+                    <label>Hora Apertura</label>
+                    <input type="time" id="modalSchStart" class="clean-time-input" onclick="if(this.showPicker) this.showPicker();">
+                </div>
+                <div class="flex-1">
+                    <label>Hora Cierre</label>
+                    <input type="time" id="modalSchEnd" class="clean-time-input" onclick="if(this.showPicker) this.showPicker();">
+                </div>
+            </div>
+
+            <div class="input-box mt-15">
+                <label class="input-label"><i class="fas fa-envelope-open-text"></i> Mensaje de Ausencia (Solo para este día)</label>
+                <textarea id="modalSchMsg" rows="4" class="clean-textarea" placeholder="Ej: ¡Buen domingo! Hoy estamos descansando, pero mañana a primera hora atenderemos tu solicitud..."></textarea>
+                <p class="info-text mt-5">Si lo dejas en blanco, el bot enviará el mensaje por defecto (si lo configuras).</p>
+            </div>
+
+            <div class="modal-actions mt-20">
+                <button onclick="saveDaySchedule()" class="btn-primary flex-1">Guardar</button>
+                <button onclick="closeScheduleModal()" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal: Nuevo Paso -->
+    <div class="modal" id="stepNameModal">
+        <div class="sheet auto-height">
+            <h3>Nuevo Paso</h3>
+            <label>Nombre del Paso (Único)</label>
+            <input type="text" id="newStepNameInput" class="uppercase-input" placeholder="Ej: BIENVENIDA" onkeypress="if(event.key==='Enter') confirmCreateStep()">
+            <div class="modal-actions mt-15">
+                <button onclick="confirmCreateStep()" class="btn-primary flex-1">Crear</button>
+                <button onclick="document.getElementById('stepNameModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Confirmar Eliminar Chat -->
+    <div class="modal" id="deleteConfirmModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-danger">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <h3>¿Eliminar Contacto?</h3>
+            <p class="modal-desc">
+                Se borrará permanentemente este contacto y su historial.<br>
+                <b id="delContactName" class="text-main"></b>
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeDelete()" class="btn-primary bg-danger flex-1">Eliminar</button>
+                <button onclick="document.getElementById('deleteConfirmModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Eliminar Cita -->
+    <div class="modal" id="deleteApptModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-danger">
+                <i class="far fa-calendar-times"></i>
+            </div>
+            <h3>¿Cancelar Cita?</h3>
+            <p class="modal-desc">
+                Se eliminará el evento de las <b id="delApptTimeLbl" class="text-main"></b>.
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeDeleteAppt()" class="btn-primary bg-danger flex-1">Eliminar</button>
+                <button onclick="document.getElementById('deleteApptModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Modal: Confirmar Eliminar Regla -->
+    <div class="modal" id="deleteKeywordModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-danger">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <h3>¿Eliminar Regla?</h3>
+            <p class="modal-desc">
+                Se borrará la regla de respuesta rápida para<br>
+                <b id="delKeywordName" class="text-main"></b>
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeDeleteKeyword()" class="btn-primary bg-danger flex-1">Eliminar</button>
+                <button onclick="document.getElementById('deleteKeywordModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Confirmar Eliminar Paso -->
+    <div class="modal" id="deleteStepModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-danger">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <h3>¿Eliminar Paso?</h3>
+            <p class="modal-desc">
+                Se eliminará la tarjeta <b id="delStepName" class="text-main"></b>.<br>
+                <span id="delStepDetail"></span>
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeDelStep()" class="btn-primary bg-danger flex-1">Eliminar de todos modos</button>
+                <button onclick="document.getElementById('deleteStepModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Replicar Horario de Lunes -->
+    <div class="modal" id="cloneScheduleModal">
+        <div class="sheet auto-height center-text">
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">📅</div>
+            <h3>¿Replicar a toda la semana?</h3>
+            <p class="modal-desc">
+                El horario de Lunes se copiará a Martes, Miércoles, Jueves,
+                Viernes, Sábado y Domingo, reemplazando lo que tengan.
+            </p>
+            <div class="modal-actions">
+                <button onclick="confirmCloneSchedule(true)" class="btn-primary flex-1">Replicar a toda la semana</button>
+                <button onclick="confirmCloneSchedule(false)" class="admin-btn flex-1">Solo Lunes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Salto de Usuario -->
+    <div class="modal" id="jumpModal">
+        <div class="sheet auto-height center-text">
+            <i class="fas fa-history modal-icon-primary"></i>
+            <h3>¿Mover Usuario?</h3>
+            <p class="modal-desc">
+                ¿Quieres mover a este cliente al paso: <br>
+                <b id="jumpTargetStep" class="text-main"></b>?
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeJump(this)" class="btn-primary flex-1">Confirmar</button>
+                <button onclick="document.getElementById('jumpModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Confirmar Acción CRM -->
+    <div class="modal" id="actionConfirmModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-info">
+                <i class="fas fa-robot"></i>
+            </div>
+            <h3>Confirmar Acción</h3>
+            <p class="modal-desc">
+                ¿Seguro que quieres ejecutar
+                <b id="actLabel" class="highlight-tag"></b>
+                para el usuario <br>
+                <b id="actClient" class="text-main large-text"></b>?
+            </p>
+            <div class="modal-actions">
+                <button onclick="executeCrmAction()" class="btn-primary flex-1">Confirmar</button>
+                <button onclick="document.getElementById('actionConfirmModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Cerrar Sesión -->
+    <div class="modal" id="logoutModal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-danger">
+                <i class="fas fa-power-off"></i>
+            </div>
+            <h3>¿Cerrar Sesión?</h3>
+            <p class="modal-desc">Se desconectará el monitor y dejarás de recibir alertas.</p>
+            <div class="modal-actions">
+                <button onclick="confirmLogout()" class="btn-primary bg-danger flex-1">Salir</button>
+                <button onclick="document.getElementById('logoutModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Nueva Respuesta Rápida (Keyword) -->
+    <div class="modal" id="keywordModal">
+        <div class="sheet">
+            <h3>Nueva Respuesta Rápida</h3>
+            <label>Palabras Clave (Separadas por coma)</label>
+            <p class="input-hint">Ej: <i>precio, cuanto cuesta, costo, valor</i></p>
+            <input type="text" id="kwInput" placeholder="Escribe las frases aquí...">
+
+            <label class="mt-15 block">Respuesta del Bot</label>
+            <textarea id="kwAnswer" rows="5" placeholder="El precio es de $500 pesos e incluye..."></textarea>
+
+            <div id="kwUploadWrap" class="kw-upload-wrap mt-15">
+                <label class="text-primary font-bold"><i class="fas fa-image"></i> Imágenes Adjuntas</label>
+                <div id="kwGallery" class="custom-gallery mt-10 mb-10"></div>
+                <input type="file" id="kwMediaFile" accept="image/*" multiple class="hidden-input" onchange="uploadKwImages(this)">
+                <button class="admin-btn auto-width" onclick="document.getElementById('kwMediaFile').click()">
+                    <i class="fas fa-upload"></i> Subir Imagen
+                </button>
+            </div>
+
+            <div class="modal-actions mt-20">
+                <button onclick="saveKeywordRule()" class="btn-primary flex-1">Guardar</button>
+                <button onclick="document.getElementById('keywordModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="mediaPreviewModal">
+        <div class="media-preview-container">
+            <div class="media-preview-header">
+                <button onclick="closeMediaPreview()" class="close-modal-btn text-white"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="media-preview-body">
+                <img id="mediaPreviewImg" src="">
+            </div>
+            <div class="wa-input-area media-preview-footer">
+                <div class="wa-input-pill flex-1 pl-20">
+                    <input type="text" id="mediaPreviewCaption" class="wa-search-input full-width" placeholder="Añade un comentario..." onkeypress="if(event.key==='Enter') sendPendingMedia()">
+                </div>
+                <button onclick="sendPendingMedia()" class="wa-main-btn">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="transform: translateX(2px);"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Editor de Paso (Flow) -->
+    <div class="modal" id="editorModal">
+        <div class="sheet wide-sheet">
+            <div class="modal-header-flex">
+                <h3 class="no-margin"><i class="fas fa-edit text-primary"></i> Editar Paso</h3>
+                <button onclick="document.getElementById('editorModal').classList.remove('active')" class="close-modal-btn">&times;</button>
+            </div>
+        
+            <div class="mb-15">
+                <label class="input-label">Nombre / ID del Paso (Tarjeta)</label>
+                <input type="text" id="stId" class="uppercase-input" placeholder="Ej: OPCION_NO" style="font-weight: bold; color: var(--primary);">
+            </div>
+
+            <label>Tipo de Interacción</label>
+            <select id="stType" onchange="renderFields()" class="mb-15">
+                <option value="menu">&#xf0ca; Menú (Botones)</option>
+                <option value="filtro">&#xf4fb; Filtro Admin</option>
+                <option value="input">&#xf0c7; Guardar Dato</option>
+                <option value="message">&#xf075; Mensaje Texto</option>
+                <option value="cita">&#xf133; Citas</option>
+                <option value="espera_catalogo">&#xf017; Espera de Catálogo</option>
+                <option value="fin_bot">&#xf11e; Finalizar</option>
+            </select>
+
+            <div id="wrapper-msg">
+                <label>Mensaje del Bot</label>
+                <div class="rich-textarea-wrapper">
+                    <textarea id="stMsg" rows="6" placeholder="Escribe el mensaje que enviará el bot aquí..."></textarea>
+                    
+                    <div class="textarea-actions">
+                        <div id="galleryContainer" class="custom-gallery"></div>
+                        <button onclick="document.getElementById('imgUpload').click()" class="attach-btn" title="Adjuntar foto/video">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="imgUpload" accept="image/*" multiple class="hidden-input" onchange="uploadImages(this)">
+            </div>
+
+            <div id="wrapper-media" style="display:none;"></div> 
+            <div id="dynFields" class="mt-15"></div>
+
+            <div class="modal-actions mt-25">
+                <button onclick="saveStep()" class="btn-primary flex-1 large-padding"><i class="fas fa-save"></i> Guardar Paso</button>
+                <button onclick="delStep()" class="btn-delete-icon"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Día del Calendario -->
+    <div class="modal" id="dayModal">
+        <div class="sheet">
+            <div class="modal-header-flex">
+                <h3 id="modalDateTitle" class="no-margin">Eventos</h3>
+                <button onclick="document.getElementById('dayModal').classList.remove('active')" class="close-modal-btn">&times;</button>
+            </div>
+            <div id="modalApptList" class="appt-list-container"></div>
+            
+            <button onclick="document.getElementById('eventForm').style.display='block'; this.style.display='none'" id="btnAddEvent" class="admin-btn dashed-btn full-width">
+                <i class="fas fa-plus"></i> Agendar Manualmente
+            </button>
+            
+            <div id="eventForm" class="event-form-container">
+                <input type="hidden" id="evtOldTime">
+                <div class="form-row">
+                    <div class="flex-1"><label>Hora</label>
+                        <input type="time" id="evtTime" onclick="if(this.showPicker) this.showPicker();">
+                    </div>
+                    <div class="flex-1"><label>Teléfono</label><input type="tel" id="evtPhone"></div>
+                </div>
+                <label>Nombre</label><input type="text" id="evtName">
+                <label>Nota</label><input type="text" id="evtNote">
+                <div class="modal-actions mt-10">
+                    <button onclick="saveEvent()" class="btn-primary flex-1">Guardar</button>
+                    <button onclick="document.getElementById('eventForm').style.display='none'; document.getElementById('btnAddEvent').style.display='block'" class="admin-btn flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Nuevo Contacto (Manual) -->
+    <div class="modal" id="contactModal">
+        <div class="sheet">
+            <h3 id="modalTitleContact">Nuevo Contacto</h3>
+            <label>Nombre</label><input type="text" id="newContName">
+            <label>Teléfono (con país)</label><input type="tel" id="newContPhone" placeholder="Ej: 521...">
+
+            <div class="card-header-flex my-15">
+                <span>Activar Bot</span>
+                <label class="switch"><input type="checkbox" id="newContEnable" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="saveNewContact()" class="btn-primary flex-1">Guardar</button>
+                <button onclick="document.getElementById('contactModal').classList.remove('active')" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar Contacto / Variables -->
+    <div id="editNameModal" class="modal">
+        <div class="sheet auto-height center-text">
+            <div class="modal-icon-info">
+                <i class="fas fa-pen"></i>
+            </div>
+            
+            <h3 class="mb-20">Editar Contacto</h3>
+            
+            <div class="form-group text-left">
+                <label class="input-label">Nombre del Contacto</label>
+                <input type="text" id="editNameInput" name="name_box_rndm" placeholder="Escribe el nuevo nombre..." 
+                       autocomplete="off" autocorrect="off" spellcheck="false"
+                       readonly onfocus="this.removeAttribute('readonly');"
+                       class="edit-contact-input" 
+                       onkeypress="if(event.key==='Enter') confirmEditName()">
+            </div>
+
+            <div class="form-group text-left mb-25">
+                <label class="input-label">Número (o vincular Teléfono Real)</label>
+                <div class="form-row">
+                    <select id="countryCodeSelect" class="styled-select-small">
+                        <option value="52" selected>🇲🇽 +52</option>
+                        <option value="1">🇺🇸 +1</option>
+                        <option value="502">🇬🇹 +502</option>
+                        <option value="504">🇭🇳 +504</option>
+                        <option value="503">🇸🇻 +503</option>
+                        <option value="57">🇨🇴 +57</option>
+                        <option value="54">🇦🇷 +54</option>
+                        <option value="56">🇨🇱 +56</option>
+                        <option value="51">🇵🇪 +51</option>
+                    </select>
+                    <input type="tel" id="editPhoneInput" placeholder="A 10 dígitos (Ej: 899...)" 
+                           autocomplete="off" autocorrect="off" spellcheck="false"
+                           class="edit-contact-input flex-1" 
+                           onkeypress="if(event.key==='Enter') confirmEditName()">
+                </div>
+            </div>
+
+            <!-- Contenedor Dinámico para Variables -->
+            <div id="dynamicVarsContainer" class="dynamic-vars-area"></div>
+
+            <div class="modal-actions">
+                <button onclick="confirmEditName()" class="btn-primary flex-1">Guardar</button>
+                <button onclick="closeEditNameModal()" class="admin-btn flex-1">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+
+    <!-- Botones flotantes de móvil (Flujo del Bot): sin esto el FAB no hace nada.
+         Solo se usan en móvil; en escritorio los botones están ocultos por CSS. -->
+    <script>
+        // La tuerca solo abre y cierra el desplegable: arriba aparecen el +
+        // (verde) y Ver Todos (blanco, del mismo color que la tuerca).
+        function toggleFlowFab() {
+            var fab = document.getElementById('flowFab');
+            if (!fab) return;
+            fab.classList.toggle('open');
+        }
+        // Botón + desplegado: crea el paso y cierra el desplegable.
+        function flowFabAddClick() {
+            toggleFlowFab();
+            createNewStepPrompt();
+        }
+        // Botón desplegado: cambia entre vista por niveles y todos los pasos,
+        // sincroniza su icono con el botón original y cierra el desplegable.
+        function flowFabViewAllClick() {
+            toggleFlowView();
+            var btn = document.getElementById('btnToggleFlowView');
+            var icon = document.getElementById('flowFabViewIcon');
+            if (btn && icon) {
+                icon.className = btn.innerHTML.indexOf('Por Niveles') !== -1 ? 'fas fa-sitemap' : 'fas fa-list';
+            }
+            toggleFlowFab();
+        }
+    </script>
+</body>
+</html>
