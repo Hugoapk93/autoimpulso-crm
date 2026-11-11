@@ -42,6 +42,7 @@
                 android:max="100"
                 android:progress="0"
                 android:progressTint="#16a34a"
+                android:indeterminateTint="#16a34a"
                 android:visibility="gone" />
 
             <TextView

@@ -11,7 +11,9 @@ import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.res.AssetManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -100,6 +102,31 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private Thread mPollThread;
     private Thread mProgressThread;
 
+    // Progress updater on the UI thread itself: it reads ~/.crm-setup.progress
+    // every 500 ms and re-posts itself until the server is up. It exists
+    // because the background progress thread alone did not move the bar while
+    // the app sat in the foreground — the bar only advanced after coming back
+    // from the Terminal (onResume). Driving the read from the main thread
+    // removes that dependency; the background thread stays as a second reader.
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mProgressUpdater = new Runnable() {
+        @Override
+        public void run() {
+            if (mDestroyed || mServerUp) return;
+            readSetupProgress();
+            mMainHandler.postDelayed(this, 500);
+        }
+    };
+
+    private void startProgressUpdater() {
+        mMainHandler.removeCallbacks(mProgressUpdater);
+        mMainHandler.post(mProgressUpdater);
+    }
+
+    private void stopProgressUpdater() {
+        mMainHandler.removeCallbacks(mProgressUpdater);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -162,11 +189,12 @@ public class CrmActivity extends Activity implements ServiceConnection {
         mResumed = true;
         maybeStartBot();
         // Coming back from the terminal (or any pause) refreshes the bar at once
-        // and restarts the progress reader if it died while the app was away.
+        // and restarts the progress readers if they died while the app was away.
         // Only while we are still waiting for the server (poll thread alive).
         if (!mServerUp && mPollThread != null && mPollThread.isAlive()) {
             readSetupProgress();
             startProgressThread();
+            startProgressUpdater();
         }
     }
 
@@ -181,6 +209,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
         mDestroyed = true;
         if (mPollThread != null) mPollThread.interrupt();
         if (mProgressThread != null) mProgressThread.interrupt();
+        stopProgressUpdater();
         if (mBound) {
             try {
                 unbindService(this);
@@ -280,6 +309,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
 
         startPolling();
         startProgressThread();
+        startProgressUpdater();
     }
 
     /** Retry from the error view: re-check the server and restart the bot if needed. */
@@ -425,6 +455,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
             }
             // The server answered (panel) or we gave up (error): the bar is done.
             stopProgressThread();
+            stopProgressUpdater();
             if (mDestroyed) return;
             runOnUiThread(() -> {
                 if (mServerUp) {
