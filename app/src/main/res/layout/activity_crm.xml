@@ -30,10 +30,30 @@
             android:orientation="vertical"
             android:padding="32dp">
 
+            <!-- Barra de progreso de la primera instalación (determinada):
+                 setup-crm.sh escribe el porcentaje en ~/.crm-setup.progress y
+                 CrmActivity la actualiza. Solo visible durante el setup. -->
             <ProgressBar
+                android:id="@+id/crm_setup_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="8dp"
+                android:layout_marginTop="8dp"
+                android:max="100"
+                android:progress="0"
+                android:progressTint="#16a34a"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/crm_setup_percent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:indeterminateTint="#16a34a" />
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="0%"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/crm_loading_text"
