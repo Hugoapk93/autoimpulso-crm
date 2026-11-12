@@ -68,7 +68,7 @@ API_TOKEN=$TOKEN
 ADMIN_TOKEN=
 VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
-VAPID_EMAIL=correo@ejemplo.com
+VAPID_EMAIL=mailto:magh.hamg@gmail.com
 EOF
     echo "Tu token del panel es: $TOKEN"
 fi
@@ -92,15 +92,22 @@ if [ -f .env ]; then
             else
                 echo "VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY" >> .env
             fi
-            if ! grep -q '^VAPID_EMAIL=.\+' .env; then
-                if grep -q '^VAPID_EMAIL=' .env; then
-                    sed -i "s|^VAPID_EMAIL=.*|VAPID_EMAIL=correo@ejemplo.com|" .env
-                else
-                    echo "VAPID_EMAIL=correo@ejemplo.com" >> .env
-                fi
-            fi
             echo "==> Claves VAPID generadas y guardadas en .env (push activado)."
         fi
+    fi
+fi
+
+# El correo VAPID debe ser una URL válida (mailto:...). Si está vacío o es
+# solo el correo sin mailto: (como el viejo correo@ejemplo.com), corregirlo.
+# Corre en cada arranque, independiente de las claves.
+if [ -f .env ]; then
+    if ! grep -q '^VAPID_EMAIL=\(mailto:\|https\?://\)' .env; then
+        if grep -q '^VAPID_EMAIL=' .env; then
+            sed -i "s|^VAPID_EMAIL=.*|VAPID_EMAIL=mailto:magh.hamg@gmail.com|" .env
+        else
+            echo "VAPID_EMAIL=mailto:magh.hamg@gmail.com" >> .env
+        fi
+        echo "==> Correo VAPID corregido en .env."
     fi
 fi
 

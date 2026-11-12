@@ -516,6 +516,9 @@ window.openSettingsPanel = function(panelId, title) {
     if (titleText) titleText.innerText = title;
 
     currentActivePanel = panelId;
+
+    // Token del panel: llenarlo al abrir su apartado.
+    if (panelId === 'panel-token') fillSettingsToken();
 }
 
 window.closeSettingsPanel = function() {
@@ -631,3 +634,66 @@ window.saveTimezone = saveTimezone;
 window.previewTimezone = previewTimezone;
 window.saveGlobalErrors = saveGlobalErrors;
 window.switchErrTab = switchErrTab;
+
+// --- Token del panel (Ajustes → panel-token) ---
+function fillSettingsToken() {
+    const el = document.getElementById('settingsTokenValue');
+    if (!el) return;
+    const token = (API && typeof API.getApiToken === 'function') ? API.getApiToken() : '';
+    el.textContent = token || 'Sin token: entra primero al panel.';
+}
+window.copySettingsToken = function() {
+    const el = document.getElementById('settingsTokenValue');
+    const token = el ? el.textContent : '';
+    if (!token || token.startsWith('Sin token')) return;
+    const done = () => {
+        const btn = document.getElementById('settingsTokenCopyBtn');
+        if (btn) {
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => { btn.innerHTML = old; }, 2000);
+        }
+        showToast('Token copiado');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).then(done).catch(() => done());
+    } else {
+        done();
+    }
+};
+
+// --- Exportar contactos a Excel (Ajustes → panel-exportar) ---
+window.downloadContactsExcel = async function() {
+    const setStatus = (msg, kind) => {
+        const el = document.getElementById('exportStatus');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.className = 'backup-status' + (kind ? ' ' + kind : '');
+    };
+    // En la app (Android), el puente descarga el Excel y te deja elegir
+    // la carpeta (SAF). En el navegador (laptop) se baja directo a Descargas.
+    try {
+        if (typeof window !== 'undefined' && window.Android && typeof window.Android.downloadContactsExcel === 'function') {
+            setStatus('Elige dónde guardar el Excel…');
+            window.Android.downloadContactsExcel();
+            setStatus('Descargando contactos.xlsx…', 'ok');
+            return;
+        }
+    } catch (e) {}
+    setStatus('Descargando contactos.xlsx…');
+    try {
+        const res = await fetch('/api/contacts/export', { cache: 'no-store' });
+        if (!res.ok) throw new Error('El servidor no pudo generar el Excel.');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'contactos.xlsx'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setStatus('contactos.xlsx descargado.', 'ok');
+        showToast('contactos.xlsx descargado');
+    } catch (e) {
+        console.error('[Contactos] Error al exportar:', e);
+        setStatus('No se pudo descargar el Excel.', 'err');
+        showToast('No se pudo descargar el Excel');
+    }
+};

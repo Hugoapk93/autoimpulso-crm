@@ -51,6 +51,14 @@
                 </div>
                 <p class="lan-link-note">Abre este link en tu computadora. Tu dispositivo debe estar conectado a la misma red WiFi.</p>
             </div>
+            <div id="qrTokenCard" class="lan-link-card" style="display: none;">
+                <p class="lan-link-title"><i class="fas fa-key"></i> Token del panel</p>
+                <div class="lan-link-row">
+                    <span id="qrTokenValue" class="lan-link-url" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;"></span>
+                    <button id="qrTokenCopyBtn" class="lan-link-copy" type="button" title="Copiar token" onclick="copyQrToken()"><i class="fas fa-copy"></i></button>
+                </div>
+                <p class="lan-link-note">Es el token para entrar al panel. Toca el icono para copiarlo.</p>
+            </div>
         </div>
         <div id="stepToken" class="step-hidden wizard-content">
             <h2>Acceso al panel</h2>
@@ -493,6 +501,30 @@
                                 <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
+                            <!-- Token del panel -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-token', 'Token del panel')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon violet"><i class="fas fa-key"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Token del panel</div>
+                                        <div class="settings-item-sub">Consultar y copiar el token de acceso</div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
+                            </div>
+
+                            <!-- Exportar contactos -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-exportar', 'Exportar contactos')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon green"><i class="fas fa-file-excel"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Exportar contactos</div>
+                                        <div class="settings-item-sub">Descargar los contactos en Excel</div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
+                            </div>
+
                         </div>
                     </div>
 
@@ -792,6 +824,28 @@
                         </div>
                         <div id="backupStatus" class="backup-status"></div>
                         <p class="backup-note"><b>Nota:</b> solo se acepta el archivo <b>crm.db</b>. No incluye la sesión de WhatsApp: si restauras en un bot limpio, tendrás que escanear el QR de nuevo.</p>
+                    </div>
+
+                    <!-- PANEL: TOKEN DEL PANEL -->
+                    <div id="panel-token" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div class="backup-card">
+                            <h5><i class="fas fa-key" style="color: var(--primary);"></i> Token del panel</h5>
+                            <p>Es el token para entrar al panel (el mismo valor de <b>API_TOKEN</b> en el archivo .env). Toca el icono para copiarlo.</p>
+                            <div class="lan-link-row">
+                                <span id="settingsTokenValue" class="lan-link-url" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;"></span>
+                                <button id="settingsTokenCopyBtn" class="lan-link-copy" type="button" title="Copiar token" onclick="copySettingsToken()"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: EXPORTAR CONTACTOS -->
+                    <div id="panel-exportar" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div class="backup-card">
+                            <h5><i class="fas fa-file-excel" style="color: var(--primary);"></i> Exportar contactos</h5>
+                            <p>Descarga todos los contactos del bot en un archivo de Excel (<b>contactos.xlsx</b>) con teléfono, nombre, bot activado, última sincronización y fecha de alta. En la app te deja elegir la carpeta; en la computadora se baja a Descargas.</p>
+                            <button class="backup-btn backup-btn-primary" onclick="downloadContactsExcel()"><i class="fas fa-download"></i> Descargar contactos.xlsx</button>
+                        </div>
+                        <div id="exportStatus" class="backup-status"></div>
                     </div>
 
                 </div>

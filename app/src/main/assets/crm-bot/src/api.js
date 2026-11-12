@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const zlib = require('zlib');
 
 // 1. 🛠️ Importaciones de Utilidades
 const { normalizePhone } = require('./utils');
@@ -508,6 +509,126 @@ router.get('/users', (req, res) => {
         return out;
     });
     res.json(users);
+});
+
+// 📊 Exportar contactos a Excel (.xlsx real, sin dependencias nuevas).
+// Un .xlsx es un ZIP con XMLs: se construye a mano con zlib (deflate) y
+// un CRC32 implementado aquí (Node no trae uno).
+const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[n] = c >>> 0;
+    }
+    return table;
+})();
+function crc32(buf) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipFiles(files) {
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    for (const f of files) {
+        const nameBuf = Buffer.from(f.name, 'utf8');
+        const deflated = zlib.deflateRawSync(f.data);
+        const crc = crc32(f.data);
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(0x04034b50, 0);
+        local.writeUInt16LE(20, 4);
+        local.writeUInt16LE(0, 6);
+        local.writeUInt16LE(8, 8);
+        local.writeUInt16LE(0, 10);
+        local.writeUInt16LE(0, 12);
+        local.writeUInt32LE(crc, 14);
+        local.writeUInt32LE(deflated.length, 18);
+        local.writeUInt32LE(f.data.length, 22);
+        local.writeUInt16LE(nameBuf.length, 26);
+        local.writeUInt16LE(0, 28);
+        localParts.push(local, nameBuf, deflated);
+        const central = Buffer.alloc(46);
+        central.writeUInt32LE(0x02014b50, 0);
+        central.writeUInt16LE(20, 4);
+        central.writeUInt16LE(20, 6);
+        central.writeUInt16LE(0, 8);
+        central.writeUInt16LE(8, 10);
+        central.writeUInt16LE(0, 12);
+        central.writeUInt16LE(0, 14);
+        central.writeUInt32LE(crc, 16);
+        central.writeUInt32LE(deflated.length, 20);
+        central.writeUInt32LE(f.data.length, 24);
+        central.writeUInt16LE(nameBuf.length, 28);
+        central.writeUInt16LE(0, 30);
+        central.writeUInt16LE(0, 32);
+        central.writeUInt16LE(0, 34);
+        central.writeUInt16LE(0, 36);
+        central.writeUInt32LE(0, 38);
+        central.writeUInt32LE(offset, 42);
+        centralParts.push(central, nameBuf);
+        offset += 30 + nameBuf.length + deflated.length;
+    }
+    const centralDir = Buffer.concat(centralParts);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(0, 4);
+    end.writeUInt16LE(0, 6);
+    end.writeUInt16LE(files.length, 8);
+    end.writeUInt16LE(files.length, 10);
+    end.writeUInt32LE(centralDir.length, 12);
+    end.writeUInt32LE(offset, 16);
+    end.writeUInt16LE(0, 20);
+    return Buffer.concat([...localParts, centralDir, end]);
+}
+function escapeXml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+function buildContactsXlsx(contacts) {
+    const headers = ['Teléfono', 'Nombre', 'Bot activado', 'Última sincronización', 'Fecha de alta'];
+    const colLetter = (i) => String.fromCharCode(65 + i);
+    let rowsXml = '';
+    const allRows = [headers, ...contacts.map(c => [
+        c.phone || '',
+        c.name || '',
+        c.bot_enabled === undefined ? '' : (c.bot_enabled ? 'Sí' : 'No'),
+        c.last_synced || '',
+        c.added_at || ''
+    ])];
+    allRows.forEach((row, ri) => {
+        const r = ri + 1;
+        const style = ri === 0 ? ' s="1"' : '';
+        rowsXml += `<row r="${r}">`;
+        row.forEach((val, ci) => {
+            rowsXml += `<c r="${colLetter(ci)}${r}" t="inlineStr"${style}><is><t>${escapeXml(val)}</t></is></c>`;
+        });
+        rowsXml += '</row>';
+    });
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`;
+    const files = [
+        { name: '[Content_Types].xml', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`, 'utf8') },
+        { name: '_rels/.rels', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`, 'utf8') },
+        { name: 'xl/workbook.xml', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Contactos" sheetId="1" r:id="rId1"/></sheets></workbook>`, 'utf8') },
+        { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`, 'utf8') },
+        { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheetXml, 'utf8') },
+        { name: 'xl/styles.xml', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`, 'utf8') }
+    ];
+    return zipFiles(files);
+}
+router.get('/contacts/export', (req, res) => {
+    try {
+        const contacts = getAllContacts();
+        const xlsx = buildContactsXlsx(contacts);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="contactos.xlsx"');
+        res.send(xlsx);
+    } catch (e) {
+        console.error('Error exportando contactos:', e.message);
+        res.status(500).json({ success: false, error: 'No se pudo generar el Excel.' });
+    }
 });
 
 router.get('/contacts', (req, res) => {

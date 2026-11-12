@@ -424,6 +424,38 @@ async function loadLanUrl() {
     lanUrlLoading = false;
 }
 
+// Token del panel en la pantalla del QR (debajo del link LAN): el token
+// viene del puente Android (.env) o del guardado en localStorage.
+function fillQrToken() {
+    const card = document.getElementById('qrTokenCard');
+    const value = document.getElementById('qrTokenValue');
+    if (!card || !value) return;
+    const token = (API && typeof API.getApiToken === 'function') ? API.getApiToken() : '';
+    if (!token) { card.style.display = 'none'; return; }
+    value.textContent = token;
+    card.style.display = '';
+}
+
+function copyQrToken() {
+    const value = document.getElementById('qrTokenValue');
+    const token = value ? value.textContent : '';
+    if (!token) return;
+    const done = () => {
+        const btn = document.getElementById('qrTokenCopyBtn');
+        if (btn) {
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => { btn.innerHTML = old; }, 2000);
+        }
+        if (typeof showToast === 'function') showToast('Token copiado');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).then(done).catch(() => fallbackCopy(token, done));
+    } else {
+        fallbackCopy(token, done);
+    }
+}
+
 function copyLanUrl() {
     const link = document.getElementById('lanLinkUrl');
     const url = link ? (link.href || link.textContent) : '';
@@ -518,6 +550,7 @@ const checkStatus = async () => {
             if(qrStep) qrStep.classList.remove('step-hidden');
             new QRious({element: document.getElementById('qrCanvas'), value: data.qr, size:200});
             loadLanUrl();
+            fillQrToken();
         }
     } catch(e){}
 
@@ -813,6 +846,7 @@ window.toggleMenu = toggleMenu;
 window.nav = nav;
 window.submitApiToken = submitApiToken;
 window.copyLanUrl = copyLanUrl;
+window.copyQrToken = copyQrToken;
 window.requestLogout = requestLogout;
 window.confirmLogout = confirmLogout;
 window.debounceFilterChats = debounceFilterChats;

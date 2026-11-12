@@ -112,6 +112,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
     /** File picker (upload) y guardado con SAF (download) del crm.db. */
     private static final int REQUEST_FILE_CHOOSER = 1001;
     private static final int REQUEST_CREATE_CRMDB = 1002;
+    private static final int REQUEST_CREATE_XLSX = 1003;
     private ValueCallback<Uri[]> mFilePathCallback;
     private byte[] mPendingDownload;
 
@@ -246,6 +247,17 @@ public class CrmActivity extends Activity implements ServiceConnection {
         /** Descarga el crm.db y abre el selector para elegir dónde guardarlo. */
         @JavascriptInterface
         public void downloadCrmDb() {
+            downloadFileViaSaf("/api/backup/download", "crm.db", REQUEST_CREATE_CRMDB);
+        }
+
+        /** Descarga los contactos en Excel y abre el selector para elegir dónde guardarlo. */
+        @JavascriptInterface
+        public void downloadContactsExcel() {
+            downloadFileViaSaf("/api/contacts/export", "contactos.xlsx", REQUEST_CREATE_XLSX);
+        }
+
+        /** Baja un archivo del backend (con el token) y abre el selector SAF. */
+        private void downloadFileViaSaf(String endpoint, String filename, int requestCode) {
             new Thread(() -> {
                 try {
                     String token = readApiToken();
@@ -253,7 +265,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
                         runOnUiThread(() -> Toast.makeText(CrmActivity.this, R.string.crm_token_missing, Toast.LENGTH_SHORT).show());
                         return;
                     }
-                    URL url = new URL(getServerUrl() + "/api/backup/download");
+                    URL url = new URL(getServerUrl() + endpoint);
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setRequestProperty("x-api-token", token);
                     conn.setConnectTimeout(10000);
@@ -273,11 +285,11 @@ public class CrmActivity extends Activity implements ServiceConnection {
                         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("application/octet-stream");
-                        intent.putExtra(Intent.EXTRA_TITLE, "crm.db");
-                        startActivityForResult(intent, REQUEST_CREATE_CRMDB);
+                        intent.putExtra(Intent.EXTRA_TITLE, filename);
+                        startActivityForResult(intent, requestCode);
                     });
                 } catch (Exception e) {
-                    Logger.logError(LOG_TAG, "downloadCrmDb failed: " + e.getMessage());
+                    Logger.logError(LOG_TAG, "downloadFileViaSaf failed: " + e.getMessage());
                     runOnUiThread(() -> Toast.makeText(CrmActivity.this, R.string.crm_download_failed, Toast.LENGTH_SHORT).show());
                 }
             }).start();
@@ -297,7 +309,7 @@ public class CrmActivity extends Activity implements ServiceConnection {
             mFilePathCallback = null;
             return;
         }
-        if (requestCode == REQUEST_CREATE_CRMDB) {
+        if (requestCode == REQUEST_CREATE_CRMDB || requestCode == REQUEST_CREATE_XLSX) {
             if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null || mPendingDownload == null) {
                 mPendingDownload = null;
                 return;
