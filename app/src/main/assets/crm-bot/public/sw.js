@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flow-crm-v5';
+const CACHE_NAME = 'flow-crm-v6';
 const urlsToCache = [
   './',
   './index.html',

@@ -14,7 +14,6 @@ import './contacts.js';
 const API_BASE = '';
 
 let flow = {}, users = [];
-let deferredPrompt;
 let apptToDelete = null;
 let allContactsCache = [];
 let currentRefDate = new Date();
@@ -100,7 +99,7 @@ socket.on('message', async (data) => {
             let reactionBox = bubble.querySelector('.reaction-container');
             if (reactionBox) {
                 if (data.reactionText) {
-                    reactionBox.innerHTML = `<span style="background:var(--bg-panel, #202c33); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:2px 5px; font-size:0.8rem; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">${data.reactionText}</span>`;
+                    reactionBox.innerHTML = `<span class="reaction-badge">${data.reactionText}</span>`;
                 } else {
                     reactionBox.innerHTML = ''; // Reacción eliminada
                 }
@@ -803,22 +802,6 @@ function debounceFilterChats(val) {
 
 window.addEventListener('load', () => { pushNavigationLayer(); });
 
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    const btn = document.getElementById('installAppBtn');
-    if(btn) btn.style.display = 'flex';
-});
-
-function installPWA() {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') document.getElementById('installAppBtn').style.display = 'none';
-        deferredPrompt = null;
-    });
-}
-
 window.addEventListener('hashchange', () => {
     if (window.location.hash === '#agenda') nav('agenda');
     if (window.location.hash === '#activity') nav('activity');
@@ -832,7 +815,6 @@ window.submitApiToken = submitApiToken;
 window.copyLanUrl = copyLanUrl;
 window.requestLogout = requestLogout;
 window.confirmLogout = confirmLogout;
-window.installPWA = installPWA;
 window.debounceFilterChats = debounceFilterChats;
 window.exitSelectionMode = exitSelectionMode;
 window.askDeleteSelectedChats = askDeleteSelectedChats;

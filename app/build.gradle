@@ -31,7 +31,7 @@ android {
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
         versionCode 1008
-        versionName "0.118.3-crm9"
+        versionName "0.118.4-crm9"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)

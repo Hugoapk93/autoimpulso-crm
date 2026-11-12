@@ -194,13 +194,13 @@ export function askDeleteSelectedChats() {
     overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9999; display:flex; justify-content:center; align-items:center; opacity:0; transition: opacity 0.2s ease-in-out;';
     
     const modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--bg-panel, #202c33); color:#e9edef; padding:24px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 15px 30px rgba(0,0,0,0.5); transform:scale(0.9); transition: transform 0.2s ease-in-out; font-family: inherit;';
+    modal.style.cssText = 'background:var(--modal-bg); color:var(--modal-text); padding:24px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 15px 30px rgba(0,0,0,0.5); transform:scale(0.9); transition: transform 0.2s ease-in-out; font-family: inherit;';
     
     modal.innerHTML = `
         <h3 style="margin-top:0; margin-bottom:15px; color:#ef5350; display:flex; align-items:center; gap:10px; font-size:1.2rem;">
             <i class="fas fa-trash-alt"></i> ${title}
         </h3>
-        <p style="color:#8696a0; line-height:1.5; font-size: 0.95rem; margin-bottom: 25px;">${msg}</p>
+        <p style="color:var(--text-muted); line-height:1.5; font-size: 0.95rem; margin-bottom: 25px;">${msg}</p>
         <div id="modalButtons" style="display:flex; justify-content:flex-end; gap:15px;"></div>
     `;
     

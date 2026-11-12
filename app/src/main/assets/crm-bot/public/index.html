@@ -97,9 +97,6 @@
                 <div class="menu-item logout" onclick="requestLogout()">
                     <i class="fas fa-power-off"></i> Salir
                 </div>
-                <div class="menu-item" id="installAppBtn" onclick="installPWA()">
-                    <i class="fas fa-download"></i> Instalar App
-                </div>
             </div>
         </div>
 
@@ -269,7 +266,7 @@
 
                 <!-- CONTENEDOR DE LA LISTA DE PASOS -->
                 <div class="view-body">
-                    <div id="stepsListContainer" style="display: flex; flex-direction: column;">
+                    <div id="stepsListContainer" class="steps-grid">
                         <!-- Aquí JavaScript inyecta las tarjetas de los pasos (.flow-step-card) -->
                     </div>
                 </div>

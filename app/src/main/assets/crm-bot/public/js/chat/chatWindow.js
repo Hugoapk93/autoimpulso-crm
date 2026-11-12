@@ -36,7 +36,7 @@ export function openWaChat(phone, isRefresh = false) {
         box.innerHTML = '';
         document.getElementById('waInputArea').style.display = 'flex';
         if(msgs.length === 0) {
-            box.innerHTML = `<div style="text-align:center; padding:40px; color:rgba(255,255,255,0.4);">
+            box.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">
                 <i class="fas fa-comment-slash" style="font-size:2rem; margin-bottom:10px;"></i><br>Sin historial reciente.</div>`;
         } else {
             // Pasamos m.id y m.reaction para pintar las reacciones de inmediato
@@ -136,7 +136,7 @@ export function addBubble(text, isMe, stepId, timestamp, mediaUrl = null, status
     if (quoted && quoted.text && !isDeleted) {
         const qText = String(quoted.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         const qBy = String(quoted.by || (quoted.fromMe ? 'Tú' : 'Cliente')).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-        quoteHtml = `<div class="quote-block" style="border-left:3px solid #00a884; background:rgba(0,0,0,0.18); border-radius:6px; padding:6px 8px; margin-bottom:5px;"><div style="font-size:0.75rem; font-weight:600; color:#00a884;">${qBy}</div><div style="font-size:0.85rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:230px;">${qText}</div></div>`;
+        quoteHtml = `<div class="quote-block"><div class="quote-by">${qBy}</div><div class="quote-text">${qText}</div></div>`;
     }
 
     let mediaHtml = '';
@@ -161,7 +161,7 @@ export function addBubble(text, isMe, stepId, timestamp, mediaUrl = null, status
     }
 
     // 🔥 FIX: Contenedor flotante para alojar la reacción visualmente
-    let reactionBadgeHtml = (reaction && !isDeleted) ? `<span style="background:var(--bg-panel, #202c33); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:2px 5px; font-size:0.8rem; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">${reaction}</span>` : '';
+    let reactionBadgeHtml = (reaction && !isDeleted) ? `<span class="reaction-badge">${reaction}</span>` : '';
     const reactionHtml = `<div class="reaction-container" style="position:absolute; bottom:-12px; right:15px; display:flex; gap:2px; z-index:10;">${reactionBadgeHtml}</div>`;
 
     // El sticker va sin fondo de burbuja, como en WhatsApp.
