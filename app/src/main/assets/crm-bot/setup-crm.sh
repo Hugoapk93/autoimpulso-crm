@@ -55,12 +55,17 @@ if [ ! -f .env ]; then
     # El .env se genera aquí mismo (sin depender de .env.example, que
     # Android no empaqueta en el APK porque empieza con punto).
     TOKEN=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+    # Claves VAPID para el push (web-push ya instalado por el npm install
+    # de arriba). Sin ellas pushService avisa "Push desactivado".
+    VAPID_KEYS=$(node -e "const w=require('web-push');const k=w.generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey);" 2>/dev/null)
+    VAPID_PUBLIC_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '1p')
+    VAPID_PRIVATE_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '2p')
     cat > .env <<EOF
 PORT=3000
 API_TOKEN=$TOKEN
 ADMIN_TOKEN=
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
 VAPID_EMAIL=correo@ejemplo.com
 EOF
     echo "Tu token del panel es: $TOKEN"

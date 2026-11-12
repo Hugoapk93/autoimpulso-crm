@@ -15,7 +15,7 @@ const {
     getAllUsers, updateUser, getUser, deleteUser,
     initializeDB,
     getLidMap, saveLidMap, getLidToPhoneMap,
-    getDb, closeDb
+    getDb, closeDb, saveSubscription
 } = require('./database');
 
 // 3. 👥 Importaciones del Dominio
@@ -74,6 +74,34 @@ router.get('/lan-url', (req, res) => {
 // TODAS las llamadas a /api, incluido GET /status.
 const { requireApiToken } = require('./auth');
 router.use(requireApiToken);
+
+// 🔔 Push: el panel las llama en registerPush() (public/js/main.js):
+// primero GET /vapid-key para suscribirse con la clave pública, luego
+// POST /subscribe con la suscripción. Sin ellas el navegador nunca se
+// suscribe y sendPushNotification no tiene a quién avisar.
+router.get('/vapid-key', (req, res) => {
+    const key = process.env.VAPID_PUBLIC_KEY;
+    if (!key) {
+        return res.status(503).json({ error: 'Push no configurado: falta VAPID_PUBLIC_KEY en el .env del servidor.' });
+    }
+    res.json({ key });
+});
+
+router.post('/subscribe', (req, res) => {
+    try {
+        const sub = req.body || {};
+        if (!sub.endpoint || typeof sub.endpoint !== 'string'
+            || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+            return res.status(400).json({ success: false, message: 'Suscripción push inválida: falta endpoint o keys.' });
+        }
+        // saveSubscription ya evita duplicados por endpoint (database.js).
+        saveSubscription(sub);
+        res.json({ success: true });
+    } catch (e) {
+        console.error("❌ Error en /subscribe:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 // --- Mapa LID -> telefono real (tabla lid_map en data/crm.db, lo escribe
 // whatsapp.js). GET /users y GET /contacts lo exponen como `lid` para que
 // el panel pueda fusionar en una sola fila el registro LID y el del

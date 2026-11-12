@@ -57,15 +57,51 @@ if [ ! -f .env ]; then
     echo "==> No existe .env: creando uno con un token nuevo..."
     progress 75 "Creando configuración..."
     TOKEN=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+    # Claves VAPID para el push (web-push ya instalado). Sin ellas
+    # pushService avisa "Push desactivado".
+    VAPID_KEYS=$(node -e "const w=require('web-push');const k=w.generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey);" 2>/dev/null)
+    VAPID_PUBLIC_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '1p')
+    VAPID_PRIVATE_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '2p')
     cat > .env <<EOF
 PORT=3000
 API_TOKEN=$TOKEN
 ADMIN_TOKEN=
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
 VAPID_EMAIL=correo@ejemplo.com
 EOF
     echo "Tu token del panel es: $TOKEN"
+fi
+
+# .env viejo con las claves VAPID vacías (creado antes de que el setup las
+# generara): rellenarlas sin tocar el token ni lo demás. Corre en cada
+# arranque, así el .env queda completo aunque no se reinstale.
+if [ -f .env ]; then
+    if ! grep -q '^VAPID_PUBLIC_KEY=.\+' .env || ! grep -q '^VAPID_PRIVATE_KEY=.\+' .env; then
+        VAPID_KEYS=$(node -e "const w=require('web-push');const k=w.generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey);" 2>/dev/null)
+        VAPID_PUBLIC_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '1p')
+        VAPID_PRIVATE_KEY=$(printf '%s' "$VAPID_KEYS" | sed -n '2p')
+        if [ -n "$VAPID_PUBLIC_KEY" ] && [ -n "$VAPID_PRIVATE_KEY" ]; then
+            if grep -q '^VAPID_PUBLIC_KEY=' .env; then
+                sed -i "s|^VAPID_PUBLIC_KEY=.*|VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY|" .env
+            else
+                echo "VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY" >> .env
+            fi
+            if grep -q '^VAPID_PRIVATE_KEY=' .env; then
+                sed -i "s|^VAPID_PRIVATE_KEY=.*|VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY|" .env
+            else
+                echo "VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY" >> .env
+            fi
+            if ! grep -q '^VAPID_EMAIL=.\+' .env; then
+                if grep -q '^VAPID_EMAIL=' .env; then
+                    sed -i "s|^VAPID_EMAIL=.*|VAPID_EMAIL=correo@ejemplo.com|" .env
+                else
+                    echo "VAPID_EMAIL=correo@ejemplo.com" >> .env
+                fi
+            fi
+            echo "==> Claves VAPID generadas y guardadas en .env (push activado)."
+        fi
+    fi
 fi
 
 rm -f "$PROGRESS_FILE"
