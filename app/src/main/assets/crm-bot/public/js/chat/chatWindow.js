@@ -57,30 +57,41 @@ export function openWaChat(phone, isRefresh = false) {
         }
     }
 
-    const qrContainer = document.getElementById('waQuickReplies');
-    if (qrContainer) {
-        qrContainer.innerHTML = ''; 
-        qrContainer.style.display = 'none';
+    renderQuickReplies(phone);
+    filterChats(state.currentSearchQuery);
+}
 
-        const currentStepId = u.current_step;
-        if (currentStepId && state.flow[currentStepId]) {
-            const stepData = state.flow[currentStepId];
-            if (stepData.type === 'filtro' && stepData.options && stepData.options.length > 0) {
-                qrContainer.style.display = 'flex'; 
-                stepData.options.forEach(opt => {
-                    const btn = document.createElement('button');
-                    btn.className = 'quick-btn';
-                    btn.innerText = opt.label; 
-                    btn.onclick = () => {
-                        const clientName = document.getElementById('waHeaderName').innerText;
-                        askCrmAction(phone, opt.next_step, opt.label, clientName);
-                    };
-                    qrContainer.appendChild(btn);
-                });
-            }
+// Botones de respuesta rápida del paso filtro: se dibujan según el paso
+// actual del cliente (u.current_step). Antes solo se dibujaban al entrar
+// al chat (openWaChat); cuando el flujo llegaba a un filtro en vivo, los
+// botones no aparecían hasta salir y volver a entrar. Ahora es una
+// función aparte y se llama también cuando cambia el paso por socket.
+export function renderQuickReplies(phone) {
+    const qrContainer = document.getElementById('waQuickReplies');
+    if (!qrContainer) return;
+    qrContainer.innerHTML = '';
+    qrContainer.style.display = 'none';
+    const state = getAppState();
+    const targetKey = getCleanPhone(phone);
+    const u = state.users.find(x => getCleanPhone(x.phone) === targetKey);
+    if (!u) return;
+    const currentStepId = u.current_step;
+    if (currentStepId && state.flow[currentStepId]) {
+        const stepData = state.flow[currentStepId];
+        if (stepData.type === 'filtro' && stepData.options && stepData.options.length > 0) {
+            qrContainer.style.display = 'flex';
+            stepData.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'quick-btn';
+                btn.innerText = opt.label;
+                btn.onclick = () => {
+                    const clientName = document.getElementById('waHeaderName').innerText;
+                    askCrmAction(phone, opt.next_step, opt.label, clientName);
+                };
+                qrContainer.appendChild(btn);
+            });
         }
     }
-    filterChats(state.currentSearchQuery);
 }
 
 export function closeWaChat() {

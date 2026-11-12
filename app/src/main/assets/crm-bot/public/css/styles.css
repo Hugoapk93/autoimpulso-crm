@@ -675,6 +675,11 @@ input:checked + .slider:before { transform: translateX(21px); }
     .wa-msgs-area { padding: 12px 12px; }
     .wa-bubble { max-width: 85%; }
     .grid-list { grid-template-columns: 1fr; }
+    .grid-list > * { min-width: 0; }
+    /* En móvil las acciones de cada respuesta (editar/borrar) van en flujo,
+       abajo a la derecha: con posición absoluta se salían de la pantalla
+       cuando la tarjeta era más ancha que el teléfono. */
+    .kw-actions { position: static; justify-content: flex-end; margin-top: 4px; }
     .steps-grid { display: flex; flex-direction: column; }
 
     /* Vistas sin header en móvil: Flujo conserva solo las migas de pan,
@@ -740,13 +745,13 @@ input:checked + .slider:before { transform: translateX(21px); }
 .media-preview-footer { padding-bottom: 25px; }
 
 /* 2. Tarjetas de Respuestas Rápidas (Keywords) */
-.kw-card { padding: 18px; border-radius: var(--radius); position: relative; margin-bottom: 10px; box-shadow: var(--shadow-sm); background: var(--card-glass); border: 1px solid var(--border-glass); }
+.kw-card { padding: 18px; border-radius: var(--radius); position: relative; margin-bottom: 10px; box-shadow: var(--shadow-sm); background: var(--card-glass); border: 1px solid var(--border-glass); min-width: 0; }
 .kw-card-pending { background: var(--danger-soft); border: 1px solid rgba(239, 68, 68, 0.4); }
 .kw-card-active { background: var(--bg-input); border: 1px solid var(--border-glass); }
-.kw-tag-danger { background: var(--danger); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
-.kw-tag-active { background: rgba(59, 130, 246, 0.18); color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px; display: inline-block; }
+.kw-tag-danger { background: var(--danger); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; overflow-wrap: anywhere; }
+.kw-tag-active { background: rgba(59, 130, 246, 0.18); color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px; display: inline-block; overflow-wrap: anywhere; }
 .kw-status-text { color: var(--danger); font-size: 0.85rem; margin-bottom: 15px; font-style: italic; }
-.kw-answer-text { color: var(--text-main); white-space: pre-wrap; font-size: 0.9rem; margin-bottom: 15px; padding: 10px 12px; background: var(--hover-soft); border-radius: 8px; line-height: 1.5; }
+.kw-answer-text { color: var(--text-main); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; margin-bottom: 15px; padding: 10px 12px; background: var(--hover-soft); border-radius: 8px; line-height: 1.5; }
 .kw-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 10px; }
 .kw-action-btn { background: none; border: none; cursor: pointer; padding: 5px; transition: transform 0.15s, opacity 0.15s; }
 .kw-action-btn:hover { transform: scale(1.12); }

@@ -5,7 +5,7 @@ import { renderCalendar, loadSchedulerConfig } from './agenda.js';
 import { initFlow, updateFlowUsers, getLinearFlowSequence } from './flow.js';
 import { handleInputTyping, handleMainBtn, sendWaMsg } from './chat/chatInput.js';
 import { smartRenderChats, renderChatList, exitSelectionMode, askDeleteSelectedChats, filterChats, removeChatFromUI } from './chat/chatList.js';
-import { openWaChat, closeWaChat, toggleCurrentBot, askJump, executeJump, askCrmAction, executeCrmAction, toggleFlowDrawer, addBubble } from './chat/chatWindow.js';
+import { openWaChat, closeWaChat, toggleCurrentBot, askJump, executeJump, askCrmAction, executeCrmAction, toggleFlowDrawer, addBubble, renderQuickReplies } from './chat/chatWindow.js';
 import { uploadChatMedia, closeMediaPreview, sendPendingMedia } from './chat/mediaUi.js';
 
 import { loadGlobalErrorsFromMemory } from './settings.js';
@@ -243,6 +243,11 @@ socket.on('message', async (data) => {
                 }
             }
             addBubble(realText, data.fromMe, data.stepId, new Date().toISOString(), data.mediaUrl, 1, data.id, null, { type: data.msgType || null, quoted: data.quoted ? { ...data.quoted, by: quotedBy } : null, deleted: false });
+            // El paso del cliente pudo cambiar (p. ej. llegó a un filtro):
+            // redibujar los botones de respuesta rápida sin salir del chat.
+            if (data.stepId && typeof renderQuickReplies === 'function') {
+                renderQuickReplies(currentChatPhone);
+            }
         }
     }
 
@@ -282,6 +287,11 @@ socket.on('user_update', (data) => {
         if (data.bot_enabled !== undefined) {
             const sw = document.getElementById('waBotSwitch');
             if (sw) sw.checked = data.bot_enabled;
+        }
+        // El paso del cliente pudo cambiar (p. ej. llegó a un filtro):
+        // redibujar los botones sin salir del chat.
+        if (data.current_step && typeof renderQuickReplies === 'function') {
+            renderQuickReplies(currentChatPhone);
         }
     }
 });

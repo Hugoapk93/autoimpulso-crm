@@ -235,6 +235,22 @@ public class CrmActivity extends Activity implements ServiceConnection {
         super.onPause();
     }
 
+    /**
+     * Botón atrás de Android: primero retrocede dentro del panel (el
+     * popstate del panel cierra el chat abierto, el modal o el menú, y con
+     * dos pulsadas seguidas sale). Solo cuando el WebView ya no tiene a
+     * dónde retroceder se cierra la app. Sin esto, estando en un chat el
+     * atrás cerraba la app directo.
+     */
+    @Override
+    public void onBackPressed() {
+        if (mWebView != null && mWebView.canGoBack()) {
+            mWebView.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+
     /** Puente JavaScript para el panel (window.Android). */
     private class CrmBridge {
         /** Token del .env, para que el panel no tenga que pedirlo. */
