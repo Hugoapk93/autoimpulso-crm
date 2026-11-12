@@ -786,9 +786,9 @@
                         </div>
                         <div class="backup-card">
                             <h5><i class="fas fa-upload" style="color: var(--primary);"></i> Cargar respaldo</h5>
-                            <p>Elige un archivo <b>.crmbackup</b> (por ejemplo, de tu carpeta de Descargas) y se cargará directo a la carpeta de datos del bot. Los datos actuales se reemplazan por los del respaldo.</p>
-                            <input type="file" id="backupFileInput" accept=".crmbackup" style="display: none;" onchange="restoreBackup(this)">
-                            <button class="backup-btn backup-btn-secondary" onclick="document.getElementById('backupFileInput').click()"><i class="fas fa-upload"></i> Elegir archivo .crmbackup</button>
+                            <p>Elige un archivo <b>.crmbackup</b> o un <b>crm.db</b> suelto (por ejemplo, de tu carpeta de Descargas) y se cargará directo a la carpeta de datos del bot. Los datos actuales se reemplazan por los del archivo. Para traer el <b>crm.db</b> de la computadora, cópialo por USB a Descargas y luego elígelo aquí: la carpeta del bot no se ve por USB.</p>
+                            <input type="file" id="backupFileInput" accept=".crmbackup,.db" style="display: none;" onchange="restoreBackup(this)">
+                            <button class="backup-btn backup-btn-secondary" onclick="document.getElementById('backupFileInput').click()"><i class="fas fa-upload"></i> Elegir archivo (.crmbackup o crm.db)</button>
                         </div>
                         <div id="backupStatus" class="backup-status"></div>
                         <p class="backup-note"><b>Nota:</b> el respaldo está cifrado con el token del panel, así que solo se puede cargar en este mismo bot. No incluye la sesión de WhatsApp: si restauras en un bot limpio, tendrás que escanear el QR de nuevo.</p>

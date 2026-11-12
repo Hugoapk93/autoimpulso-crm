@@ -467,9 +467,23 @@ router.post('/backup/restore', backupUpload.single('backup'), (req, res) => {
         if (!req.file || !req.file.buffer) {
             return res.status(400).json({ success: false, error: 'No se recibió ningún archivo.' });
         }
-        const bundle = parseBackupBuffer(req.file.buffer);
         const dataDir = path.join(__dirname, '../data');
         if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+        const buf = req.file.buffer;
+        // Archivo SQLite suelto (crm.db): empieza con "SQLite format 3".
+        // Se coloca directo como data/crm.db, sin descifrar. Es la vía para
+        // traer el crm.db de la computadora: se copia por USB a Descargas y
+        // desde el panel se elige aquí (la carpeta de Termux no se ve por USB).
+        if (buf.length >= 15 && buf.subarray(0, 15).toString('latin1') === 'SQLite format 3') {
+            try { closeDb(); } catch (e) {}
+            for (const suffix of ['-wal', '-shm']) {
+                try { fs.unlinkSync(path.join(dataDir, 'crm.db' + suffix)); } catch (e) {}
+            }
+            fs.writeFileSync(path.join(dataDir, 'crm.db'), buf);
+            initializeDB();
+            return res.json({ success: true, restored: 1, type: 'crm.db' });
+        }
+        const bundle = parseBackupBuffer(buf);
         // SQLite: si viene crm.db, cerrar la conexión antes de escribirlo y
         // borrar el WAL/SHM viejos, para que al reabrir no lea datos rancios.
         const hasDb = bundle.files && Object.prototype.hasOwnProperty.call(bundle.files, 'crm.db');
