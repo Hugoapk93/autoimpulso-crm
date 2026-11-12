@@ -6,6 +6,15 @@ const API_BASE = '';
 // hardcodeado en el código.
 const TOKEN_KEY = 'crm_api_token';
 export const getApiToken = () => {
+    // En la app (WebView), el token viene directo del .env vía el puente
+    // Android, así el panel nunca tiene que pedirlo. En el navegador
+    // (laptop) se usa el guardado en localStorage, como antes.
+    try {
+        if (typeof window !== 'undefined' && window.Android && typeof window.Android.getApiToken === 'function') {
+            const t = window.Android.getApiToken();
+            if (t) return String(t).trim();
+        }
+    } catch (e) {}
     try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
 };
 export const setApiToken = (t) => {

@@ -61,7 +61,7 @@ API_TOKEN=$TOKEN
 ADMIN_TOKEN=
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
-VAPID_EMAIL=
+VAPID_EMAIL=correo@ejemplo.com
 EOF
     echo "Tu token del panel es: $TOKEN"
     echo "Escríbelo cuando el panel te lo pida (también está guardado en ~/crm-bot/.env)."

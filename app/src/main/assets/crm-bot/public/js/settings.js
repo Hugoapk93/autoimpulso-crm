@@ -550,25 +550,31 @@ function setBackupStatus(msg, kind) {
     el.className = 'backup-status' + (kind ? ' ' + kind : '');
 }
 window.downloadBackup = async function() {
-    setBackupStatus('Creando respaldo…');
+    // En la app (Android), el puente descarga el crm.db y te deja elegir
+    // la carpeta (SAF). En el navegador (laptop) se baja directo a Descargas.
+    try {
+        if (typeof window !== 'undefined' && window.Android && typeof window.Android.downloadCrmDb === 'function') {
+            setBackupStatus('Elige dónde guardar el crm.db…');
+            window.Android.downloadCrmDb();
+            setBackupStatus('Descargando crm.db…', 'ok');
+            return;
+        }
+    } catch (e) {}
+    setBackupStatus('Descargando crm.db…');
     try {
         const res = await fetch('/api/backup/download', { cache: 'no-store' });
         if (!res.ok) throw new Error('El servidor no pudo crear el respaldo.');
         const blob = await res.blob();
-        let name = 'autoimpulso-respaldo.crmbackup';
-        const cd = res.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename="?([^";]+)"?/);
-        if (m) name = m[1];
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = name; a.click();
+        a.href = url; a.download = 'crm.db'; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        setBackupStatus('Respaldo descargado: ' + name, 'ok');
-        showToast('Respaldo descargado');
+        setBackupStatus('crm.db descargado.', 'ok');
+        showToast('crm.db descargado');
     } catch (e) {
         console.error('[Respaldo] Error al descargar:', e);
-        setBackupStatus('No se pudo descargar el respaldo.', 'err');
-        showToast('No se pudo descargar el respaldo');
+        setBackupStatus('No se pudo descargar el crm.db.', 'err');
+        showToast('No se pudo descargar el crm.db');
     }
 };
 window.restoreBackup = async function(input) {
@@ -581,9 +587,9 @@ window.restoreBackup = async function(input) {
         form.append('backup', file);
         const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) throw new Error(data.error || 'Respaldo inválido.');
-        setBackupStatus(`Respaldo cargado: ${data.restored} archivo(s). Recargando…`, 'ok');
-        showToast('Respaldo cargado');
+        if (!res.ok || !data.success) throw new Error(data.error || 'Archivo inválido.');
+        setBackupStatus('crm.db cargado. Recargando…', 'ok');
+        showToast('crm.db cargado');
         setTimeout(() => location.reload(), 1500);
     } catch (e) {
         console.error('[Respaldo] Error al cargar:', e);

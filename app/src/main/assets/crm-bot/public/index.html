@@ -781,17 +781,17 @@
                     <div id="panel-respaldo" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
                         <div class="backup-card">
                             <h5><i class="fas fa-download" style="color: var(--primary);"></i> Descargar respaldo</h5>
-                            <p>Descarga todos los datos del bot (contactos, chats, citas, flujo, ajustes) en un solo archivo <b>.crmbackup</b>, comprimido y cifrado. Guárdalo donde quieras.</p>
-                            <button class="backup-btn backup-btn-primary" onclick="downloadBackup()"><i class="fas fa-download"></i> Descargar respaldo</button>
+                            <p>Descarga el archivo <b>crm.db</b> con todos los datos del bot (contactos, chats, citas, flujo, ajustes). En la app te deja elegir la carpeta; en la computadora se baja a Descargas.</p>
+                            <button class="backup-btn backup-btn-primary" onclick="downloadBackup()"><i class="fas fa-download"></i> Descargar crm.db</button>
                         </div>
                         <div class="backup-card">
                             <h5><i class="fas fa-upload" style="color: var(--primary);"></i> Cargar respaldo</h5>
-                            <p>Elige un archivo <b>.crmbackup</b> o un <b>crm.db</b> suelto (por ejemplo, de tu carpeta de Descargas) y se cargará directo a la carpeta de datos del bot. Los datos actuales se reemplazan por los del archivo. Para traer el <b>crm.db</b> de la computadora, cópialo por USB a Descargas y luego elígelo aquí: la carpeta del bot no se ve por USB.</p>
-                            <input type="file" id="backupFileInput" accept=".crmbackup,.db" style="display: none;" onchange="restoreBackup(this)">
-                            <button class="backup-btn backup-btn-secondary" onclick="document.getElementById('backupFileInput').click()"><i class="fas fa-upload"></i> Elegir archivo (.crmbackup o crm.db)</button>
+                            <p>Elige un archivo <b>crm.db</b> (por ejemplo, de tu carpeta de Descargas) y se cargará directo como la base de datos del bot. Los datos actuales se reemplazan por los del archivo.</p>
+                            <input type="file" id="backupFileInput" accept=".db" style="display: none;" onchange="restoreBackup(this)">
+                            <button class="backup-btn backup-btn-secondary" onclick="document.getElementById('backupFileInput').click()"><i class="fas fa-upload"></i> Elegir archivo crm.db</button>
                         </div>
                         <div id="backupStatus" class="backup-status"></div>
-                        <p class="backup-note"><b>Nota:</b> el respaldo está cifrado con el token del panel, así que solo se puede cargar en este mismo bot. No incluye la sesión de WhatsApp: si restauras en un bot limpio, tendrás que escanear el QR de nuevo.</p>
+                        <p class="backup-note"><b>Nota:</b> solo se acepta el archivo <b>crm.db</b>. No incluye la sesión de WhatsApp: si restauras en un bot limpio, tendrás que escanear el QR de nuevo.</p>
                     </div>
 
                 </div>

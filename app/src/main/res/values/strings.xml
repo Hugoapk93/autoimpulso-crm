@@ -35,6 +35,9 @@
     <string name="crm_token_copied">Token copiado</string>
     <string name="crm_token_close">Cerrar</string>
     <string name="crm_token_missing">Todavía no hay token: el bot no ha creado el .env.</string>
+    <string name="crm_choose_file">Elegir archivo</string>
+    <string name="crm_download_failed">No se pudo descargar el crm.db</string>
+    <string name="crm_download_saved">crm.db guardado</string>
 
 
 

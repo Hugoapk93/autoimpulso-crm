@@ -18,6 +18,10 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.net.Uri;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -36,13 +40,16 @@ import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,6 +108,12 @@ public class CrmActivity extends Activity implements ServiceConnection {
     private volatile boolean mSetupRunning = false;
     private Thread mPollThread;
     private Thread mProgressThread;
+
+    /** File picker (upload) y guardado con SAF (download) del crm.db. */
+    private static final int REQUEST_FILE_CHOOSER = 1001;
+    private static final int REQUEST_CREATE_CRMDB = 1002;
+    private ValueCallback<Uri[]> mFilePathCallback;
+    private byte[] mPendingDownload;
 
     // Progress updater on the UI thread itself: it reads ~/.crm-setup.progress
     // every 500 ms and re-posts itself until the server is up. It exists
@@ -165,6 +178,23 @@ public class CrmActivity extends Activity implements ServiceConnection {
             }
         });
 
+        // Puente para el panel: el token viene directo del .env (el panel no
+        // tiene que pedirlo) y la descarga del crm.db deja elegir la carpeta.
+        mWebView.addJavascriptInterface(new CrmBridge(), "Android");
+        // Sin esto, <input type="file"> no abre el selector en el WebView.
+        mWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                if (mFilePathCallback != null) mFilePathCallback.onReceiveValue(null);
+                mFilePathCallback = filePathCallback;
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                startActivityForResult(Intent.createChooser(intent, getString(R.string.crm_choose_file)), REQUEST_FILE_CHOOSER);
+                return true;
+            }
+        });
+
         Button retryButton = findViewById(R.id.crm_retry_button);
         retryButton.setOnClickListener(v -> retry());
         Button terminalButton = findViewById(R.id.crm_terminal_button);
@@ -202,6 +232,86 @@ public class CrmActivity extends Activity implements ServiceConnection {
     protected void onPause() {
         mResumed = false;
         super.onPause();
+    }
+
+    /** Puente JavaScript para el panel (window.Android). */
+    private class CrmBridge {
+        /** Token del .env, para que el panel no tenga que pedirlo. */
+        @JavascriptInterface
+        public String getApiToken() {
+            String t = readApiToken();
+            return t == null ? "" : t;
+        }
+
+        /** Descarga el crm.db y abre el selector para elegir dónde guardarlo. */
+        @JavascriptInterface
+        public void downloadCrmDb() {
+            new Thread(() -> {
+                try {
+                    String token = readApiToken();
+                    if (token == null) {
+                        runOnUiThread(() -> Toast.makeText(CrmActivity.this, R.string.crm_token_missing, Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    URL url = new URL(getServerUrl() + "/api/backup/download");
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestProperty("x-api-token", token);
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(30000);
+                    if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                        runOnUiThread(() -> Toast.makeText(CrmActivity.this, R.string.crm_download_failed, Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    try (InputStream in = conn.getInputStream()) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) != -1) baos.write(buf, 0, n);
+                    }
+                    mPendingDownload = baos.toByteArray();
+                    runOnUiThread(() -> {
+                        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("application/octet-stream");
+                        intent.putExtra(Intent.EXTRA_TITLE, "crm.db");
+                        startActivityForResult(intent, REQUEST_CREATE_CRMDB);
+                    });
+                } catch (Exception e) {
+                    Logger.logError(LOG_TAG, "downloadCrmDb failed: " + e.getMessage());
+                    runOnUiThread(() -> Toast.makeText(CrmActivity.this, R.string.crm_download_failed, Toast.LENGTH_SHORT).show());
+                }
+            }).start();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_FILE_CHOOSER) {
+            if (mFilePathCallback == null) return;
+            Uri[] results = null;
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                results = new Uri[]{data.getData()};
+            }
+            mFilePathCallback.onReceiveValue(results);
+            mFilePathCallback = null;
+            return;
+        }
+        if (requestCode == REQUEST_CREATE_CRMDB) {
+            if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null || mPendingDownload == null) {
+                mPendingDownload = null;
+                return;
+            }
+            try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
+                if (out == null) throw new IOException("openOutputStream null");
+                out.write(mPendingDownload);
+                Toast.makeText(this, R.string.crm_download_saved, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Logger.logError(LOG_TAG, "save crm.db failed: " + e.getMessage());
+                Toast.makeText(this, R.string.crm_download_failed, Toast.LENGTH_SHORT).show();
+            }
+            mPendingDownload = null;
+        }
     }
 
     @Override
