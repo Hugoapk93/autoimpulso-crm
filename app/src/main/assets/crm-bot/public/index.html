@@ -178,10 +178,10 @@
 
                     <div class="wa-input-area" id="waInputArea" style="display:none;">
                         <div class="wa-input-pill" id="waInputPill">
-                            <input type="text" id="waInput" name="chat_box_rndm" placeholder="Escribe un mensaje..." 
+                            <textarea id="waInput" name="chat_box_rndm" placeholder="Escribe un mensaje..." rows="1"
                                    autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" 
                                    readonly onfocus="this.removeAttribute('readonly');"
-                                   oninput="handleInputTyping()">
+                                   oninput="handleInputTyping()"></textarea>
 
                             <label for="chatImgUpload" class="chat-attach-btn">
                                 <i class="fas fa-paperclip" title="Adjuntar archivo"></i>

@@ -3,7 +3,23 @@ import { addBubble } from './chatWindow.js';
 import { showToast } from '../utils.js';
 import * as API from '../api.js';
 
+// La caja crece como en WhatsApp: hasta 12 líneas y luego scroll interno.
+// Antes era un <input> de una sola línea y el texto se iba hacia
+// los lados y desaparecía al llegar al límite.
+const INPUT_MAX_LINES = 12;
+export function autoGrowInput() {
+    const inp = document.getElementById('waInput');
+    if (!inp) return;
+    inp.style.height = 'auto';
+    const lineHeight = parseFloat(getComputedStyle(inp).lineHeight) || 24;
+    const maxHeight = Math.round(lineHeight * INPUT_MAX_LINES);
+    const newHeight = Math.min(inp.scrollHeight, maxHeight);
+    inp.style.height = newHeight + 'px';
+    inp.style.overflowY = inp.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 export function handleInputTyping() {
+    autoGrowInput();
     const inp = document.getElementById('waInput');
     const iconsToHide = document.querySelectorAll('.hide-on-type');
     const btn = document.getElementById('waMainBtn');

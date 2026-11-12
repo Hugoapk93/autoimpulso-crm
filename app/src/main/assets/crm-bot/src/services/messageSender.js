@@ -189,6 +189,10 @@ const sendStepMessage = async (sock, jid, stepId, userData = {}) => {
     let mediaList = Array.isArray(step.media) ? step.media : (step.media ? [step.media] : []);
     if (step.type === 'filtro' && isClosed) mediaList = [];
     let sentImage = false, isSuccess = true;
+    // delivered: ¿realmente salió algo (imagen o texto) hacia el cliente?
+    // Sin esto, un envío que no salió (sin conexión, paso sin mensaje)
+    // devolvía true y el recordatorio se marcaba como enviado.
+    let delivered = false;
 
     for (let i = 0; i < mediaList.length; i++) {
         const finalPath = path.join(publicFolder, mediaList[i].replace(/^\//, ''));
@@ -197,10 +201,10 @@ const sendStepMessage = async (sock, jid, stepId, userData = {}) => {
             try {
                 if (esSimulador(jid)) {
                     enviarAlFrontend(jid, { url: mediaList[i], caption }, 'image');
-                    sentImage = true;
+                    sentImage = true; delivered = true;
                 } else if (sock?.user) {
                     await sock.sendMessage(jid, { image: { url: finalPath }, caption });
-                    sentImage = true;
+                    sentImage = true; delivered = true;
                 }
                 if (mediaList.length > 1) await new Promise(r => setTimeout(r, 800));
             } catch (e) { isSuccess = false; }
@@ -210,8 +214,8 @@ const sendStepMessage = async (sock, jid, stepId, userData = {}) => {
     if (!sentImage && messageText) {
         await typing(sock, jid, messageText.length);
         try {
-            if (esSimulador(jid)) enviarAlFrontend(jid, messageText);
-            else if (sock?.user) await sock.sendMessage(jid, { text: messageText });
+            if (esSimulador(jid)) { enviarAlFrontend(jid, messageText); delivered = true; }
+            else if (sock?.user) { await sock.sendMessage(jid, { text: messageText }); delivered = true; }
         } catch (e) { isSuccess = false; }
     }
 
@@ -250,7 +254,7 @@ const sendStepMessage = async (sock, jid, stepId, userData = {}) => {
         }, 1500);
     }
 
-    return isSuccess;
+    return isSuccess && delivered;
 };
 
 module.exports = { sendStepMessage, send, esSimulador, resolveBareJid };

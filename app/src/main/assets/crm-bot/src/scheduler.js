@@ -6,6 +6,7 @@ const { normalizePhone } = require('./utils');
 // así que todos comparten el mismo candado y el mismo agenda.json.
 const agendaService = require('./services/agendaService');
 const messageSender = require('./services/messageSender');
+const botEvents = require('./events');
 
 // 🔥 CONTROL DE CICLOS Y MUTEX
 let isSchedulerRunning = false;
@@ -134,14 +135,25 @@ const checkScheduler = async () => {
             const wasPaused = storedUser.bot_enabled === false;
             if (wasPaused) console.log(`⏸️ ${appt.name} tiene el bot en pausa: se envía el recordatorio sin reactivarlo.`);
 
-            console.log(`🚀 Moviendo a ${appt.name} al paso: ${config.target_step}`);
-            await updateUser(dbPhone, { current_step: config.target_step });
-
             const targetJid = resolveReminderJid(appt, userData, dbPhone);
 
             try {
-                // 🔥 Usamos activeSock para garantizar que enviamos por la conexión VIVA
-                await messageSender.sendStepMessage(activeSock, targetJid, config.target_step, userData);
+                // 🔥 Usamos activeSock para garantizar que enviamos por la conexión VIVA.
+                // Se envía PRIMERO y solo si el mensaje realmente salió se mueve
+                // al cliente al paso y se marca el recordatorio: antes se movía
+                // al cliente al paso y se marcaba como enviado sin revisar si
+                // el mensaje llegó, así el cliente quedaba en un paso cuyo
+                // mensaje nunca recibió y el recordatorio ya no se reintentaba.
+                const sent = await messageSender.sendStepMessage(activeSock, targetJid, config.target_step, userData);
+                if (!sent) {
+                    console.log(`⚠️ El recordatorio a ${appt.name} (JID: ${targetJid}) no se envió; se reintentará en la próxima revisión.`);
+                    allSuccess = false;
+                    continue;
+                }
+
+                console.log(`🚀 Moviendo a ${appt.name} al paso: ${config.target_step}`);
+                await updateUser(dbPhone, { current_step: config.target_step });
+                botEvents.emit('user_update', { phone: dbPhone, current_step: config.target_step });
 
                 appt.recordatorio_enviado = true;
                 hasChanges = true;

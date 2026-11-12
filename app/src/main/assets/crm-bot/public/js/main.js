@@ -4,7 +4,7 @@ import { loadKeywords } from './keywords.js';
 import { renderCalendar, loadSchedulerConfig } from './agenda.js';
 import { initFlow, updateFlowUsers, getLinearFlowSequence } from './flow.js';
 import { handleInputTyping, handleMainBtn, sendWaMsg } from './chat/chatInput.js';
-import { smartRenderChats, renderChatList, exitSelectionMode, askDeleteSelectedChats, filterChats, removeChatFromUI } from './chat/chatList.js';
+import { smartRenderChats, renderChatList, exitSelectionMode, isChatSelectionActive, askDeleteSelectedChats, filterChats, removeChatFromUI } from './chat/chatList.js';
 import { openWaChat, closeWaChat, toggleCurrentBot, askJump, executeJump, askCrmAction, executeCrmAction, toggleFlowDrawer, addBubble, renderQuickReplies } from './chat/chatWindow.js';
 import { uploadChatMedia, closeMediaPreview, sendPendingMedia } from './chat/mediaUi.js';
 
@@ -823,6 +823,15 @@ window.addEventListener('popstate', function (event) {
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('active')) {
         toggleMenu();
+        return;
+    }
+
+    // Si está activa la selección para borrar, el atrás primero cancela
+    // la selección (no sale de la app). Se empuja una capa para que la
+    // historia quede igual que antes de pulsar atrás.
+    if (typeof isChatSelectionActive === 'function' && isChatSelectionActive()) {
+        exitSelectionMode();
+        pushNavigationLayer();
         return;
     }
 

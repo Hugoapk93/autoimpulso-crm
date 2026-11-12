@@ -120,17 +120,35 @@ export function renderChatList(list) {
             </div>
         `;
 
+        // Pulsación larga para seleccionar (borrar): 400 ms y tolerancia
+        // de movimiento de 12 px. Antes eran 600 ms y CUALQUIER movimiento
+        // del dedo cancelaba el gesto, así que en el teléfono casi nunca
+        // entraba y no se sentía responsivo.
+        const LONG_PRESS_MS = 400;
+        const LONG_PRESS_MOVE_PX = 12;
+        let pressStartX = 0, pressStartY = 0;
+
         const startPress = (e) => {
             if (e.type === 'mousedown' && e.button !== 0) return;
             ignoreClick = false;
+            const pt = e.touches && e.touches[0] ? e.touches[0] : e;
+            pressStartX = pt.clientX; pressStartY = pt.clientY;
+            div.classList.add('pressing');
             longPressTimer = setTimeout(() => {
                 ignoreClick = true;
                 toggleSelection(u.phone);
                 if (navigator.vibrate) navigator.vibrate(50);
-            }, 600);
+            }, LONG_PRESS_MS);
         };
 
-        const cancelPress = () => clearTimeout(longPressTimer);
+        const cancelPress = () => { clearTimeout(longPressTimer); div.classList.remove('pressing'); };
+
+        const handleMove = (e) => {
+            const pt = e.touches && e.touches[0] ? e.touches[0] : e;
+            if (Math.abs(pt.clientX - pressStartX) > LONG_PRESS_MOVE_PX || Math.abs(pt.clientY - pressStartY) > LONG_PRESS_MOVE_PX) {
+                cancelPress();
+            }
+        };
 
         const handleClick = (e) => {
             if (ignoreClick) { ignoreClick = false; return; }
@@ -143,7 +161,7 @@ export function renderChatList(list) {
         div.addEventListener('mouseup', cancelPress);
         div.addEventListener('mouseleave', cancelPress);
         div.addEventListener('touchend', cancelPress);
-        div.addEventListener('touchmove', cancelPress);
+        div.addEventListener('touchmove', handleMove, {passive: true});
         div.addEventListener('click', handleClick);
 
         c.appendChild(div);
@@ -179,6 +197,10 @@ export function exitSelectionMode() {
     document.getElementById('waHeaderSelection').style.display = 'none';
     filterChats(state.currentSearchQuery);
 }
+
+// ¿Está activa la selección para borrar? La usa el botón atrás (main.js)
+// para cancelar la selección antes de intentar salir de la app.
+export function isChatSelectionActive() { return isSelectionMode; }
 
 export function askDeleteSelectedChats() {
     if(selectedChats.length === 0) return;
