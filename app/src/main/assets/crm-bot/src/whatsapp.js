@@ -32,6 +32,7 @@ class WhatsAppService extends EventEmitter {
         this.qr = null;
         this.status = 'disconnected';
         this.isShuttingDown = false;
+        this.isWaitingForInternet = false;
         
         this.userMessageBuffers = new Map();
         this.userMessageTimers = new Map();
@@ -55,6 +56,16 @@ class WhatsAppService extends EventEmitter {
         this.status = 'connecting';
         this.reportToTower();
         console.log("🔄 Iniciando conexión a WhatsApp...");
+
+        // Cerrar el socket viejo AHORA (antes de los await): si no, sus
+        // eventos ('close') siguen disparándose y provocan otra reconexión
+        // en bucle. Se quitan sus listeners, se cierra y se pone en null
+        // para que handleConnectionUpdate ignore cualquier evento tardío.
+        if (this.sock) {
+            try { this.sock.ev.removeAllListeners(); } catch (e) {}
+            try { this.sock.end(); } catch (e) {}
+            this.sock = null;
+        }
 
         const { state, saveCreds } = await useMultiFileAuthState(authDir);
         const { version } = await fetchLatestBaileysVersion();
@@ -89,33 +100,58 @@ class WhatsAppService extends EventEmitter {
         this.sock.ev.on('messages.reaction', this.handleMessagesReaction.bind(this));
         this.sock.ev.on('messages.delete', this.handleMessagesDelete.bind(this));
 
-        this.sock.ev.on('connection.update', this.handleConnectionUpdate.bind(this));
+        // El socket se guarda en una variable local para que el handler de
+        // conexión pueda ignorar eventos de un socket viejo (ver
+        // handleConnectionUpdate): un 'close' de un socket ya reemplazado
+        // disparaba otra reconexión y el bot entraba en bucle.
+        const sock = this.sock;
+        sock.ev.on('connection.update', (update) => this.handleConnectionUpdate(sock, update));
         this.sock.ev.on('presence.update', this.handlePresenceUpdate.bind(this));
         this.sock.ev.on('messages.upsert', this.handleMessagesUpsert.bind(this));
         this.sock.ev.on('contacts.upsert', this.handleContactsUpsert.bind(this));
     }
 
     async esperarInternetYConectar() {
-        if (this.isShuttingDown) return;
-        console.log("📡 Sin red. Esperando conexión a Internet en silencio...");
-        let hasInternet = false;
-        
-        while (!hasInternet && !this.isShuttingDown) {
-            try {
-                await require('dns').promises.lookup('google.com');
-                hasInternet = true;
-            } catch (err) {
-                await new Promise(r => setTimeout(r, 5000));
+        // Una sola espera a la vez: sin este candado, cada 'close' abría
+        // su propio bucle y todos llamaban a connect() a la vez.
+        if (this.isShuttingDown || this.isWaitingForInternet) return;
+        this.isWaitingForInternet = true;
+        try {
+            let hasInternet = false;
+            let firstTry = true;
+            
+            while (!hasInternet && !this.isShuttingDown) {
+                try {
+                    await require('dns').promises.lookup('google.com');
+                    hasInternet = true;
+                } catch (err) {
+                    // "Sin red" solo si el DNS realmente falla. Antes se
+                    // imprimía siempre al entrar, aunque hubiera internet
+                    // (el DNS contestaba al instante) y el log parecía un
+                    // corte de red que no existía.
+                    if (firstTry) {
+                        console.log("📡 Sin red. Esperando conexión a Internet en silencio...");
+                        firstTry = false;
+                    }
+                    await new Promise(r => setTimeout(r, 5000));
+                }
             }
-        }
-        
-        if (!this.isShuttingDown) {
-            console.log("🌐 ¡Internet detectado! Reanudando conexión a WhatsApp...");
-            this.connect();
+            
+            if (!this.isShuttingDown) {
+                console.log("🌐 ¡Internet detectado! Reanudando conexión a WhatsApp...");
+                this.connect();
+            }
+        } finally {
+            this.isWaitingForInternet = false;
         }
     }
 
-    handleConnectionUpdate(update) {
+    handleConnectionUpdate(sock, update) {
+        // Si el evento viene de un socket viejo (ya reemplazado por uno
+        // nuevo), ignorarlo: un 'close' de un socket viejo ponía el estado
+        // en 'disconnected' y disparaba otra reconexión aunque el socket
+        // nuevo ya estuviera conectado (el "falso positivo" de CONECTADO).
+        if (sock !== this.sock) return;
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {

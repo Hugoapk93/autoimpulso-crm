@@ -125,12 +125,16 @@ export function renderChatList(list) {
             </div>
         `;
 
-        // Pulsación larga para seleccionar (borrar): 400 ms y tolerancia
-        // de movimiento de 12 px. Antes eran 600 ms y CUALQUIER movimiento
-        // del dedo cancelaba el gesto, así que en el teléfono casi nunca
-        // entraba y no se sentía responsivo.
-        const LONG_PRESS_MS = 400;
+        // Pulsación larga para seleccionar (borrar): 500 ms y tolerancia
+        // de movimiento de 12 px. Antes eran 400 ms y un deslizamiento
+        // lento para salir de la app (que empieza en el borde y tarda un
+        // poco en moverse) alcanzaba a disparar la selección. Además, los
+        // toques que empiezan en los bordes (zona del gesto de atrás de
+        // Android, 24 px) no inician la pulsación larga: ese gesto es para
+        // salir, no para borrar.
+        const LONG_PRESS_MS = 500;
         const LONG_PRESS_MOVE_PX = 12;
+        const EDGE_GESTURE_PX = 24;
         let pressStartX = 0, pressStartY = 0;
 
         const startPress = (e) => {
@@ -143,6 +147,10 @@ export function renderChatList(list) {
             // bajo el dedo ya es otro).
             if (e.type === 'mousedown' && Date.now() - lastTouchEnd < 500) return;
             const pt = e.touches && e.touches[0] ? e.touches[0] : e;
+            // Gesto de atrás de Android: empieza en el borde de la pantalla.
+            // No iniciar la pulsación larga ahí o el deslizamiento para
+            // salir termina seleccionando un chat para borrar.
+            if (e.touches && (pt.clientX < EDGE_GESTURE_PX || pt.clientX > window.innerWidth - EDGE_GESTURE_PX)) return;
             pressStartX = pt.clientX; pressStartY = pt.clientY;
             div.classList.add('pressing');
             longPressTimer = setTimeout(() => {

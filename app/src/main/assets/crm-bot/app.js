@@ -185,7 +185,38 @@ const bootstrap = () => {
         console.error('🔥 ERROR NO CAPTURADO (el proceso sigue):', err);
     });
 
+    // Baileys a veces intenta re-enviar un "retry" (re-pedir un mensaje que
+    // no pudo leer) justo cuando la conexión se cayó o se está reconectando,
+    // y ese envío falla con "Connection Closed" (428). Es un error interno
+    // de Baileys que no afecta al bot (se reconecta solo y el proceso
+    // sigue), pero ensuciaba el log con un stack enorme. Se ignora de
+    // forma silenciosa (con un aviso breve, como mucho una vez por minuto).
+    // Cualquier otra promesa rechazada se sigue reportando completa.
+    let lastBaileysClosedLog = 0;
     process.on('unhandledRejection', (reason) => {
+        const msg = (reason && reason.message) || String(reason || '');
+        const stack = (reason && reason.stack) || '';
+        const statusCode = reason && reason.output && reason.output.statusCode;
+        const isBaileysClosed = (statusCode === 428 && msg.includes('Connection Closed'))
+            || stack.includes('sendRetryRequest')
+            || (msg.includes('Connection Closed') && stack.includes('sendRawMessage'));
+        // Lo mismo para el "Timed Out" (408) de Baileys durante la conexión:
+        // el handshake (subir pre-keys, consultas IQ) se vence si la red va
+        // lenta o el socket se reemplazó antes de que el servidor conteste.
+        // También es interno e inofensivo (el proceso sigue y reconecta).
+        const isBaileysTimeout = (statusCode === 408 && msg.includes('Timed Out'))
+            || stack.includes('waitForMessage')
+            || stack.includes('uploadPreKeysToServerIfRequired')
+            || stack.includes('getAvailablePreKeysOnServer')
+            || stack.includes('sendPassiveIq');
+        if (isBaileysClosed || isBaileysTimeout) {
+            const now = Date.now();
+            if (now - lastBaileysClosedLog > 60000) {
+                lastBaileysClosedLog = now;
+                console.log('ℹ️ Baileys intentó un reintento sobre una conexión cerrada (normal al reconectar; se ignora).');
+            }
+            return;
+        }
         console.error('⚠️ PROMESA RECHAZADA SIN MANEJAR (el proceso sigue):', reason);
     });
 
