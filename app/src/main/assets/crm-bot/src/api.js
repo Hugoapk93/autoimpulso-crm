@@ -3,6 +3,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
+const zlib = require('zlib');
 
 // 1. 🛠️ Importaciones de Utilidades
 const { normalizePhone } = require('./utils');
@@ -12,7 +14,10 @@ const {
     getKeywords, saveKeyword, deleteKeyword, 
     getFullFlow, saveFlowStep, deleteFlowStep, 
     getSettings, saveSettings, 
-    getAllUsers, updateUser, getUser, deleteUser
+    getAllUsers, updateUser, getUser, deleteUser,
+    initializeDB,
+    getLidMap, saveLidMap, getLidToPhoneMap,
+    getDb, closeDb
 } = require('./database');
 
 // 3. 👥 Importaciones del Dominio
@@ -71,30 +76,13 @@ router.get('/lan-url', (req, res) => {
 // TODAS las llamadas a /api, incluido GET /status.
 const { requireApiToken } = require('./auth');
 router.use(requireApiToken);
-// --- Mapa LID -> telefono real (data/lid_map.json, lo escribe whatsapp.js) ---
-// GET /users y GET /contacts lo exponen como `lid` para que el panel pueda
-// fusionar en una sola fila el registro LID y el del telefono real.
-// POST /contacts/link-lid usa la misma fusion que la Fase 3 del backend
-// (migrateLidUser en whatsapp.js), aqui como funcion local para no
-// depender del cliente de Baileys desde el router.
-const lidMapPath = path.join(__dirname, '../data/lid_map.json');
-function getLidMap() {
-    try {
-        if (!fs.existsSync(lidMapPath)) return {};
-        const data = JSON.parse(fs.readFileSync(lidMapPath, 'utf-8'));
-        return (data && typeof data === 'object') ? data : {};
-    } catch (e) { return {}; }
-}
-function saveLidMap(data) {
-    try { fs.writeFileSync(lidMapPath, JSON.stringify(data, null, 2)); } catch (e) { console.error('Error guardando lid_map.json:', e.message); }
-}
-// lid (digitos) -> telefono real, a partir de lid_map.json.
-function getLidToPhoneMap() {
-    const map = {};
-    const lidMap = getLidMap();
-    Object.keys(lidMap).forEach(lid => { map[normalizePhone(lid)] = normalizePhone(lidMap[lid]); });
-    return map;
-}
+// --- Mapa LID -> telefono real (tabla lid_map en data/crm.db, lo escribe
+// whatsapp.js). GET /users y GET /contacts lo exponen como `lid` para que
+// el panel pueda fusionar en una sola fila el registro LID y el del
+// telefono real. POST /contacts/link-lid usa la misma fusion que la Fase 3
+// del backend (migrateLidUser en whatsapp.js), aqui como funcion local para
+// no depender del cliente de Baileys desde el router.
+// getLidMap / saveLidMap / getLidToPhoneMap se importan de database.js.
 
 // Fusion LID -> telefono: une historial, mensajes, paso, pausa y citas del
 // registro viejo en el del telefono real; archiva el viejo (soft delete) y
@@ -392,6 +380,119 @@ router.get('/status', (req, res) => {
         sessionExists,
         statusString: waService.status
     });
+});
+
+// 💾 Respaldo cifrado de data/ (Ajustes → Respaldo y Restauración).
+// Todo con módulos built-in de Node (crypto, zlib): sin dependencias nuevas.
+// Formato del archivo .crmbackup:
+//   "CRMBK1" (6 bytes) + salt (16) + IV (12) + ciphertext + authTag (16)
+// El contenido es un JSON { version, createdAt, files: { nombre: base64 } }
+// comprimido con gzip y cifrado con AES-256-GCM. La clave se deriva del
+// API_TOKEN con scrypt, así no hay otra contraseña que recordar; por eso
+// el respaldo solo se restaura en un bot con el MISMO API_TOKEN.
+// Solo cubre data/ (contactos, chats, citas, ajustes...). NO incluye la
+// sesión de WhatsApp (auth_info_baileys), que está en uso mientras el bot
+// corre; tras restaurar en un bot limpio hay que escanear el QR de nuevo.
+const BACKUP_MAGIC = Buffer.from('CRMBK1', 'utf8');
+function backupKey(salt) {
+    return crypto.scryptSync(process.env.API_TOKEN || '', salt, 32);
+}
+function buildBackupBuffer() {
+    // SQLite: vaciar el WAL a crm.db antes de leerlo, para que el archivo
+    // sea autoconsistente. Los -wal/-shm son transitorios y no se respaldan.
+    try { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch (e) {}
+    const files = {};
+    const dataDir = path.join(__dirname, '../data');
+    if (fs.existsSync(dataDir)) {
+        for (const name of fs.readdirSync(dataDir)) {
+            const full = path.join(dataDir, name);
+            if (!fs.statSync(full).isFile() || name === '.gitkeep') continue;
+            if (name === 'crm.db-wal' || name === 'crm.db-shm') continue;
+            files[name] = fs.readFileSync(full).toString('base64');
+        }
+    }
+    const bundle = JSON.stringify({ version: 1, createdAt: new Date().toISOString(), files });
+    const compressed = zlib.gzipSync(Buffer.from(bundle, 'utf8'));
+    const salt = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', backupKey(salt), iv);
+    const ciphertext = Buffer.concat([cipher.update(compressed), cipher.final()]);
+    return Buffer.concat([BACKUP_MAGIC, salt, iv, ciphertext, cipher.getAuthTag()]);
+}
+function parseBackupBuffer(buf) {
+    if (!Buffer.isBuffer(buf) || buf.length < BACKUP_MAGIC.length + 16 + 12 + 16) {
+        throw new Error('Archivo de respaldo inválido.');
+    }
+    if (!buf.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) {
+        throw new Error('No es un respaldo de Autoimpulso (.crmbackup).');
+    }
+    const salt = buf.subarray(6, 22);
+    const iv = buf.subarray(22, 34);
+    const tag = buf.subarray(buf.length - 16);
+    const ciphertext = buf.subarray(34, buf.length - 16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', backupKey(salt), iv);
+    decipher.setAuthTag(tag);
+    let compressed;
+    try {
+        compressed = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    } catch (e) {
+        throw new Error('No se pudo descifrar: el respaldo es de otro bot (API_TOKEN distinto) o está dañado.');
+    }
+    let bundle;
+    try {
+        bundle = JSON.parse(zlib.gunzipSync(compressed).toString('utf8'));
+    } catch (e) {
+        throw new Error('Respaldo dañado (no se pudo descomprimir).');
+    }
+    if (!bundle || bundle.version !== 1 || !bundle.files || typeof bundle.files !== 'object') {
+        throw new Error('Respaldo inválido (formato desconocido).');
+    }
+    return bundle;
+}
+router.get('/backup/download', (req, res) => {
+    try {
+        const buf = buildBackupBuffer();
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="autoimpulso-respaldo-${stamp}.crmbackup"`);
+        res.send(buf);
+    } catch (e) {
+        console.error('Error creando respaldo:', e.message);
+        res.status(500).json({ success: false, error: 'No se pudo crear el respaldo.' });
+    }
+});
+const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+router.post('/backup/restore', backupUpload.single('backup'), (req, res) => {
+    try {
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ success: false, error: 'No se recibió ningún archivo.' });
+        }
+        const bundle = parseBackupBuffer(req.file.buffer);
+        const dataDir = path.join(__dirname, '../data');
+        if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+        // SQLite: si viene crm.db, cerrar la conexión antes de escribirlo y
+        // borrar el WAL/SHM viejos, para que al reabrir no lea datos rancios.
+        const hasDb = bundle.files && Object.prototype.hasOwnProperty.call(bundle.files, 'crm.db');
+        if (hasDb) {
+            try { closeDb(); } catch (e) {}
+            for (const suffix of ['-wal', '-shm']) {
+                try { fs.unlinkSync(path.join(dataDir, 'crm.db' + suffix)); } catch (e) {}
+            }
+        }
+        let restored = 0;
+        for (const [name, b64] of Object.entries(bundle.files)) {
+            // Sin rutas: solo el nombre del archivo, nada de ../ ni subcarpetas.
+            if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) continue;
+            fs.writeFileSync(path.join(dataDir, name), Buffer.from(b64, 'base64'));
+            restored++;
+        }
+        // Recargar la BD en memoria para que el panel lea lo restaurado.
+        initializeDB();
+        res.json({ success: true, restored, createdAt: bundle.createdAt || null });
+    } catch (e) {
+        console.error('Error restaurando respaldo:', e.message);
+        res.status(400).json({ success: false, error: e.message || 'Respaldo inválido.' });
+    }
 });
 
 router.post('/auth/init', (req, res) => {

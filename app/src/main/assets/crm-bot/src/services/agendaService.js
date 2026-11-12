@@ -1,77 +1,75 @@
-const fs = require('fs').promises;
-const path = require('path');
-const { getSettings, getFullFlow } = require('../database');
+// ==========================================
+// 📅 agendaService.js — SQLite (node:sqlite)
+//
+// Misma API pública que la versión JSON. Cambia solo el almacén:
+// la agenda ya no es data/agenda.json sino la tabla `agenda` en
+// data/crm.db (misma conexión que database.js).
+//
+// Lo que esto arregla de verdad:
+// - bookAppointment es UNA transacción (BEGIN IMMEDIATE + PRIMARY KEY
+//   (date, time)): si dos procesos reservan el mismo hueco a la vez,
+//   solo uno gana. El candado en memoria de antes solo protegía
+//   dentro de un mismo proceso; dos procesos confirmaban el mismo
+//   hueco y solo quedaba guardada una cita (reproducido, ver NOTAS).
+// - getAgenda/saveAgenda siguen existiendo con la misma forma
+//   ({ fecha: [citas] }) para el scheduler, la API y la fusión LID,
+//   que mutan el objeto y lo guardan. saveAgenda reemplaza la tabla
+//   entera en una transacción, como antes reemplazaba el archivo.
+// ==========================================
+const { getSettings, getFullFlow, getDb, withTransaction } = require('../database');
 const { normalizePhone } = require('../utils'); // Para el JID de respaldo (LID vs teléfono)
 
-const agendaPath = path.join(__dirname, '../../data/agenda.json');
-
-// 🔥 MUTEX: Cola de promesas para evitar condiciones de carrera al guardar simultáneamente
-let agendaWriteLock = Promise.resolve();
-
 // ==========================================
-// 1. MANEJO DE ARCHIVOS (No Bloqueante, Seguro y con Reintentos)
+// 1. ACCESO A LA TABLA agenda
 // ==========================================
+
+const agendaRowToEntry = (row) => {
+    const entry = {
+        time: row.time,
+        phone: row.phone,
+        name: row.name,
+        jid: row.jid,
+        created_at: row.created_at
+    };
+    if (row.note !== null && row.note !== undefined) entry.note = row.note;
+    if (row.recordatorio_enviado) entry.recordatorio_enviado = true;
+    return entry;
+};
 
 const getAgenda = async () => {
-    try {
-        const data = await fs.readFile(agendaPath, 'utf-8');
-        return JSON.parse(data);
-    } catch (e) {
-        if (e.code === 'ENOENT') return {};
-        // JSON corrupto: antes se devolvía {} y el siguiente guardado
-        // sobrescribía el archivo, perdiendo las citas. Se respalda primero.
-        if (e instanceof SyntaxError) {
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const backupPath = `${agendaPath}.corrupto-${stamp}`;
-            try {
-                await fs.rename(agendaPath, backupPath);
-                console.error(`⚠️ ${agendaPath} está corrupto. Respaldo guardado en ${backupPath}. Se usa una agenda vacía.`);
-            } catch (backupErr) {
-                console.error(`⚠️ ${agendaPath} está corrupto y NO se pudo respaldar (${backupErr.message}). Se usa una agenda vacía.`);
-            }
-            return {};
-        }
-        console.error('⚠️ Error leyendo agenda:', e);
-        return {};
+    const rows = getDb().prepare('SELECT * FROM agenda ORDER BY date, time').all();
+    const out = {};
+    for (const row of rows) {
+        if (!out[row.date]) out[row.date] = [];
+        out[row.date].push(agendaRowToEntry(row));
     }
+    return out;
 };
 
-// Escritura real del archivo (con reintentos). NO encola nada: la usa
-// saveAgenda y también bookAppointment cuando ya tiene el candado.
-const writeAgendaFile = async (data) => {
-    const tempPath = `${agendaPath}.${Date.now()}.tmp`; // Único por petición
-
-    let attempts = 0;
-    let success = false;
-
-    while (attempts < 5 && !success) {
-        try {
-            await fs.writeFile(tempPath, JSON.stringify(data, null, 2));
-            await fs.rename(tempPath, agendaPath);
-            success = true;
-        } catch (e) {
-            // Si el archivo está ocupado por el sistema operativo, reintentamos
-            if (e.code === 'ENOENT' || e.code === 'EPERM') {
-                attempts++;
-                await new Promise(r => setTimeout(r, 200));
-            } else {
-                console.error('🔥 CRITICAL: Fallo al guardar agenda:', e);
-                throw e;
-            }
-        }
-    }
-
-    if (!success) {
-         console.error(`CRITICAL: No se pudo guardar la agenda tras 5 intentos.`);
-    }
-};
-
+// Reemplazo completo de la agenda (la usa el scheduler tras marcar
+// recordatorios, la API al borrar y la fusión LID al migrar citas).
 const saveAgenda = async (data) => {
-    // 🛡️ El Mutex asegura que las escrituras se encolen y no se pisen entre sí
-    agendaWriteLock = agendaWriteLock.then(() => writeAgendaFile(data))
-        .catch(() => {}); // Previene que un error tranque toda la cola para futuros guardados
-
-    return agendaWriteLock;
+    withTransaction(() => {
+        const db = getDb();
+        db.prepare('DELETE FROM agenda').run();
+        const insert = db.prepare(`INSERT OR REPLACE INTO agenda
+            (date, time, phone, name, jid, note, created_at, recordatorio_enviado)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const date of Object.keys(data || {})) {
+            for (const c of (data[date] || [])) {
+                if (!c || !c.time) continue;
+                insert.run(
+                    String(date), String(c.time),
+                    c.phone === undefined || c.phone === null ? null : String(c.phone),
+                    c.name === undefined || c.name === null ? null : String(c.name),
+                    c.jid === undefined || c.jid === null ? null : String(c.jid),
+                    c.note === undefined || c.note === null ? null : String(c.note),
+                    c.created_at === undefined || c.created_at === null ? null : String(c.created_at),
+                    c.recordatorio_enviado ? 1 : 0
+                );
+            }
+        }
+    });
 };
 
 // JID de respaldo cuando no nos dieron uno y el usuario no tiene jid
@@ -84,12 +82,12 @@ const fallbackJid = (phone) => {
 };
 
 // ==========================================
-// 2. LECTURA DE CONFIGURACIÓN (Desde Memoria RAM)
+// 2. LECTURA DE CONFIGURACIÓN (Desde la BD)
 // ==========================================
 
 const getCitaInterval = () => {
     try {
-        const flow = getFullFlow(); 
+        const flow = getFullFlow();
         if (flow) {
             for (const key in flow) {
                 if (flow[key].type === 'cita' && flow[key].interval) {
@@ -125,15 +123,15 @@ const timeToMinutes = (timeStr) => {
 const getRealLocalTime = () => {
     const settings = getSettings();
     const tz = settings.timezone || "America/Matamoros";
-    
+
     const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', 
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', hour12: false
     });
-    
+
     const parts = formatter.formatToParts(new Date());
     const val = (type) => parts.find(p => p.type === type).value;
-    
+
     const y = val('year'), m = val('month'), d = val('day');
     const h = val('hour') === '24' ? '00' : val('hour'); // Bypass al bug de medianoche de Intl
     const min = val('minute');
@@ -143,7 +141,7 @@ const getRealLocalTime = () => {
         timeStr: `${h}:${min}`,
         hour: parseInt(h, 10),
         minute: parseInt(min, 10),
-        dayOfWeek: new Date(`${y}-${m}-${d}T12:00:00`).getDay() 
+        dayOfWeek: new Date(`${y}-${m}-${d}T12:00:00`).getDay()
     };
 };
 
@@ -162,14 +160,14 @@ const isDateInPast = (dateStr, timeStr) => {
 // Función rescatada de agenda.js para evaluar cierres inmediatos
 const isBusinessClosed = () => {
     const settings = getSettings();
-    if (!settings.schedule || !settings.schedule.active) return false; 
+    if (!settings.schedule || !settings.schedule.active) return false;
 
     const localNow = getRealLocalTime();
-    const currentDay = String(localNow.dayOfWeek); 
-    
+    const currentDay = String(localNow.dayOfWeek);
+
     const dayConfig = settings.schedule.days[currentDay];
     if (!dayConfig || dayConfig.active === false || String(dayConfig.active) === "false") {
-        return true; 
+        return true;
     }
 
     const currentMins = (localNow.hour * 60) + localNow.minute;
@@ -188,8 +186,8 @@ const validateBusinessRules = (timeStr, dateStr = null) => {
     if (!timeStr) return { valid: false, reason: "Falta la hora." };
 
     const [h, m] = timeStr.split(':').map(Number);
-    const interval = getCitaInterval(); 
-    
+    const interval = getCitaInterval();
+
     if (interval !== 1440 && m % interval !== 0) {
         let ej = "ej: 4:00, 4:30";
         if (interval === 15) ej = "ej: 4:00, 4:15, 4:30";
@@ -198,11 +196,11 @@ const validateBusinessRules = (timeStr, dateStr = null) => {
     }
 
     const localNow = getRealLocalTime();
-    let targetDayOfWeek = localNow.dayOfWeek; 
-    
+    let targetDayOfWeek = localNow.dayOfWeek;
+
     if (dateStr) {
         const [y, month, d] = dateStr.split('-').map(Number);
-        const proposedDate = new Date(y, month - 1, d, 12, 0, 0); 
+        const proposedDate = new Date(y, month - 1, d, 12, 0, 0);
         targetDayOfWeek = proposedDate.getDay();
     }
 
@@ -217,15 +215,15 @@ const validateBusinessRules = (timeStr, dateStr = null) => {
     const startMins = timeToMinutes(sStart);
     const endMins = timeToMinutes(sEnd);
 
-    let isClosed = (startMins < endMins) 
-        ? (reqMins < startMins || reqMins >= endMins) 
+    let isClosed = (startMins < endMins)
+        ? (reqMins < startMins || reqMins >= endMins)
         : (reqMins >= endMins && reqMins < startMins);
 
     if (isClosed) {
         return { valid: false, reason: `⛔ Lo siento, a esa hora estamos cerrados.\n🕒 Nuestro horario para ese día es de *${sStart}* a *${sEnd}*.` };
     }
 
-    return { valid: true, settings }; 
+    return { valid: true, settings };
 };
 
 // ==========================================
@@ -233,26 +231,26 @@ const validateBusinessRules = (timeStr, dateStr = null) => {
 // ==========================================
 
 const checkAvailability = async (date, time) => {
-    const db = await getAgenda(); 
-    return !(db[date] && db[date].some(c => c.time === time));
+    const row = getDb().prepare('SELECT 1 AS x FROM agenda WHERE date = ? AND time = ?').get(date, time);
+    return !row;
 };
 
 const getAvailableSlots = async (dateStr) => {
     const settings = getSettings();
     const localNow = getRealLocalTime();
-    const intervalMinutes = getCitaInterval(); 
+    const intervalMinutes = getCitaInterval();
 
     const [y, m, d] = dateStr.split('-').map(Number);
     const dayOfWeek = new Date(y, m - 1, d, 12, 0, 0).getDay();
     const dayConfig = settings.schedule?.days?.[dayOfWeek];
-    
+
     if (!dayConfig || dayConfig.active === false || String(dayConfig.active) === "false") return [];
 
     const startMins = timeToMinutes(dayConfig.start || "09:00");
     const endMins = timeToMinutes(dayConfig.end || "19:00");
     const allSlots = [];
-    
-    if (intervalMinutes === 1440) { 
+
+    if (intervalMinutes === 1440) {
          allSlots.push(`${String(Math.floor(startMins / 60)).padStart(2, '0')}:${String(startMins % 60).padStart(2, '0')}`);
     } else {
         for (let m = startMins; m < endMins; m += intervalMinutes) {
@@ -273,18 +271,14 @@ const getAvailableSlots = async (dateStr) => {
 };
 
 const bookAppointment = async (date, time, phone, name, userJid, note) => {
-    // 🔥 ATÓMICO: todo el leer-revisar-guardar corre dentro del candado.
-    // Antes el candado solo cubría la escritura: dos reservas al mismo hueco
-    // podían leer "libre" a la vez y la última escritura borraba a la
-    // primera, con doble reserva confirmada a los dos clientes.
-    let booked = false;
-    agendaWriteLock = agendaWriteLock.then(async () => {
-        const db = await getAgenda();
-
+    // 🔥 ATÓMICO: leer-revisar-guardar corre dentro de UNA transacción
+    // SQLite (BEGIN IMMEDIATE) con PRIMARY KEY (date, time). Antes el
+    // candado solo vivía en este proceso: dos procesos podían leer
+    // "libre" a la vez, confirmar los dos y guardar solo uno.
+    const db = getDb();
+    db.exec('BEGIN IMMEDIATE');
+    try {
         // Si no se proporcionó el JID (retrocompatibilidad), lo generamos.
-        // CORREGIDO: era require('./database'), ruta que no existe desde
-        // src/services/ (es '../database'). El try/catch lo tragaba y el
-        // JID siempre caía en '@s.whatsapp.net', mal para un LID.
         if (!userJid) {
             try {
                 const { getUser } = require('../database');
@@ -295,36 +289,37 @@ const bookAppointment = async (date, time, phone, name, userJid, note) => {
             }
         }
 
-        // Limpieza Inteligente (Auto-Reagendado)
-        for (const agendaDate in db) {
-            if (Array.isArray(db[agendaDate])) {
-                db[agendaDate] = db[agendaDate].filter(c => c.phone !== phone);
-                if (db[agendaDate].length === 0) delete db[agendaDate];
-            }
+        // Limpieza Inteligente (Auto-Reagendado): quita las citas viejas
+        // de este teléfono. OJO: esto va ANTES de comprobar el hueco,
+        // pero si el hueco está ocupado se hace ROLLBACK, así que la
+        // cita vieja NO se pierde cuando la reserva falla (igual que
+        // antes, donde el return sin guardar descartaba la limpieza).
+        db.prepare('DELETE FROM agenda WHERE phone = ?').run(phone);
+
+        const occupied = db.prepare('SELECT 1 AS x FROM agenda WHERE date = ? AND time = ?').get(date, time);
+        if (occupied) {
+            db.exec('ROLLBACK');
+            return false;
         }
 
-        if (!db[date]) db[date] = [];
-        if (db[date].some(c => c.time === time)) return; // Hueco ya ocupado
-
         // La nota es opcional (solo la pone /agenda/book desde el panel).
-        // Se guarda dentro de la misma escritura atómica, así que una cita
+        // Se guarda dentro de la misma transacción, así que una cita
         // confirmada nunca pierde su nota.
-        const entry = {
-            time, phone, name,
-            jid: userJid,
-            created_at: new Date().toISOString()
-        };
-        if (note !== undefined && note !== null && String(note).trim() !== '') entry.note = String(note);
-
-        db[date].push(entry);
-
-        db[date].sort((a, b) => a.time.localeCompare(b.time));
-        await writeAgendaFile(db);
-        booked = true;
-    }).catch(() => { booked = false; });
-
-    await agendaWriteLock;
-    return booked;
+        db.prepare(`INSERT INTO agenda(date, time, phone, name, jid, note, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+            String(date), String(time), phone === undefined || phone === null ? null : String(phone),
+            name === undefined || name === null ? null : String(name),
+            userJid === undefined || userJid === null ? null : String(userJid),
+            (note === undefined || note === null || String(note).trim() === '') ? null : String(note),
+            new Date().toISOString()
+        );
+        db.exec('COMMIT');
+        return true;
+    } catch (e) {
+        try { db.exec('ROLLBACK'); } catch (_) { /* sin transacción */ }
+        console.error('🔥 Error reservando cita:', e.message);
+        return false;
+    }
 };
 
 module.exports = {

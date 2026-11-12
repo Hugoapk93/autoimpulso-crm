@@ -8,7 +8,8 @@ const EventEmitter = require('events');
 const { handleMessage } = require('./flow');
 const { initScheduler } = require('./scheduler');
 const { syncContacts, getAllContacts, addManualContact, removeContact } = require('./contacts');
-const { getSettings, updateUser, getUser, deleteUser, updateMessage } = require('./database');
+const { getSettings, updateUser, getUser, deleteUser, updateMessage, getLidMap, saveLidMap } = require('./database');
+const { normalizePhone } = require('./utils');
 const agendaService = require('./services/agendaService');
 const { findKeywordMatch } = require('./keywords');
 const messageSender = require('./services/messageSender'); 
@@ -19,33 +20,9 @@ const INSTANCE_ID = 'bot_' + (process.argv.includes('--port') ? process.argv[pro
 const authDir = 'auth_info_baileys';
 const uploadDir = path.join(__dirname, '../public/uploads');
 const dataDir = path.join(__dirname, '../data');
-const lidMapPath = path.join(dataDir, 'lid_map.json');
 
-const normalizePhone = (ph) => {
-    if (!ph) return '';
-    let clean = String(ph).replace(/\D/g, '');
-    if (clean.startsWith('52') && clean.length >= 12) return '52' + clean.slice(clean.length === 13 ? 3 : 2);
-    if (clean.length === 10) return '52' + clean;
-    return clean;
-};
-
-function safeReadJSON(filePath, defaultVal) {
-    if (!fs.existsSync(filePath)) return defaultVal;
-    try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch (e) {
-        // JSON corrupto: se respalda antes de que un guardado lo sobrescriba.
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupPath = `${filePath}.corrupto-${stamp}`;
-        try {
-            fs.renameSync(filePath, backupPath);
-            console.error(`⚠️ ${filePath} está corrupto. Respaldo guardado en ${backupPath}.`);
-        } catch (backupErr) {
-            console.error(`⚠️ ${filePath} está corrupto y NO se pudo respaldar (${backupErr.message}).`);
-        }
-        return defaultVal;
-    }
-}
-function getLidMap() { return safeReadJSON(lidMapPath, {}); }
-function saveLidMap(data) { fs.writeFileSync(lidMapPath, JSON.stringify(data, null, 2)); }
+// Mapa LID -> telefono real: tabla lid_map en data/crm.db (database.js).
+// getLidMap / saveLidMap se importan de database.js.
 
 
 class WhatsAppService extends EventEmitter {

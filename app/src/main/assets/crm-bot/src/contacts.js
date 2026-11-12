@@ -1,52 +1,18 @@
-const fs = require('fs');
-const fsAsync = require('fs').promises; // 🔥 Usado para guardado no bloqueante
-const path = require('path');
-
-const contactsPath = path.join(__dirname, '../data/contacts.json');
-
 // ==========================================
-// 🧠 ESTADO EN MEMORIA (CACHE)
+// 👥 contacts.js — SQLite (node:sqlite)
+//
+// Misma API pública que la versión JSON. Cambia solo el almacén:
+// antes había DOS copias de contacts.json en memoria (la caché de
+// este módulo y la de database.js, que la cargaba sin usarla) y cada
+// una escribía el archivo por su lado. Ahora hay una sola tabla
+// `contacts` en data/crm.db, compartida con database.js a través de
+// la misma conexión (getDb), así que el panel y el bot ya no pueden
+// divergir.
+//
+// Sin cambios para quien lo importa: syncContacts, getAllContacts,
+// toggleContactBot, isBotDisabled, addManualContact, removeContact.
 // ==========================================
-let contactsCache = [];
-let isCacheLoaded = false;
-let writeLock = Promise.resolve();
-
-// Carga inicial (Solo ocurre una vez al arrancar el servidor)
-const loadCache = () => {
-    if (isCacheLoaded) return;
-    try {
-        if (fs.existsSync(contactsPath)) {
-            contactsCache = JSON.parse(fs.readFileSync(contactsPath, 'utf-8'));
-        }
-    } catch (e) {
-        // JSON corrupto: antes se iniciaba con la caché vacía y el siguiente
-        // persistCache sobrescribía el archivo, perdiendo los contactos.
-        // Se respalda primero, igual que en database.js.
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupPath = `${contactsPath}.corrupto-${stamp}`;
-        try {
-            fs.renameSync(contactsPath, backupPath);
-            console.error(`⚠️ Error cargando caché de contactos (JSON corrupto). Respaldo en ${backupPath}. Iniciando vacío.`);
-        } catch (backupErr) {
-            console.error(`⚠️ Error cargando caché de contactos y NO se pudo respaldar (${backupErr.message}). Iniciando vacío.`);
-        }
-        contactsCache = [];
-    }
-    isCacheLoaded = true;
-};
-
-// Persistencia Asíncrona (No bloquea el Event Loop)
-const persistCache = () => {
-    writeLock = writeLock.then(async () => {
-        const tempPath = `${contactsPath}.${Date.now()}.tmp`;
-        try {
-            await fsAsync.writeFile(tempPath, JSON.stringify(contactsCache, null, 2));
-            await fsAsync.rename(tempPath, contactsPath);
-        } catch (e) {
-            console.error("🔥 Error crítico guardando contactos en disco:", e);
-        }
-    }).catch(() => {});
-};
+const { getDb, withTransaction } = require('./database');
 
 // ==========================================
 // 🛠️ UTILIDADES SEGURAS DE TELÉFONO
@@ -55,7 +21,7 @@ const persistCache = () => {
 const normalizePhone = (jidOrPhone) => {
     if (!jidOrPhone) return '';
     let clean = String(jidOrPhone).split('@')[0].replace(/\D/g, '');
-    
+
     if (clean.startsWith('52') && clean.length >= 12) {
         return '52' + clean.slice(clean.length === 13 ? 3 : 2);
     }
@@ -64,128 +30,105 @@ const normalizePhone = (jidOrPhone) => {
 };
 
 // ==========================================
-// 🚀 FUNCIONES CORE (Operan en O(1) u O(N) en RAM)
+// 🚀 FUNCIONES CORE
 // ==========================================
 
 function addManualContact(phone, name, enabled) {
-    loadCache();
+    const db = getDb();
     const cleanPhone = normalizePhone(phone);
     if (!cleanPhone) return { success: false, message: 'Teléfono inválido' };
 
-    let existingContact = contactsCache.find(c => normalizePhone(c.phone) === cleanPhone);
+    const now = new Date().toISOString();
+    const existing = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(cleanPhone);
 
-    if (existingContact) {
-        if (name && name !== cleanPhone) existingContact.name = name;
-        
-        if (typeof enabled === 'boolean') {
-            existingContact.bot_enabled = enabled;
-        }
-
-        existingContact.phone = cleanPhone; 
-        existingContact.last_synced = new Date().toISOString();
-        
-        persistCache();
-        console.log(`✏️ Contacto actualizado en caché: ${name} (${cleanPhone}) | Bot: ${existingContact.bot_enabled ? 'ACTIVO' : 'PAUSADO'}`);
+    if (existing) {
+        const newName = (name && name !== cleanPhone) ? name : existing.name;
+        const newEnabled = (typeof enabled === 'boolean') ? (enabled ? 1 : 0) : existing.bot_enabled;
+        db.prepare('UPDATE contacts SET name = ?, bot_enabled = ?, phone = ?, last_synced = ? WHERE phone = ?')
+            .run(newName, newEnabled, cleanPhone, now, cleanPhone);
+        console.log(`✏️ Contacto actualizado: ${name} (${cleanPhone}) | Bot: ${newEnabled ? 'ACTIVO' : 'PAUSADO'}`);
         return { success: true, message: 'Actualizado' };
     }
 
     const jid = `${cleanPhone}@s.whatsapp.net`;
 
-    contactsCache.push({
-        phone: cleanPhone,
-        jid: jid,
-        name: name || cleanPhone,
-        bot_enabled: enabled !== undefined ? enabled : true,
-        last_synced: new Date().toISOString(),
-        added_at: new Date().toISOString()
-    });
+    db.prepare(`INSERT INTO contacts(phone, jid, name, bot_enabled, last_synced, added_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(
+        cleanPhone, jid, name || cleanPhone,
+        enabled !== undefined ? (enabled ? 1 : 0) : 1, now, now);
 
-    persistCache();
-    console.log(`👤 Nuevo contacto guardado en caché: ${name} (${cleanPhone})`);
+    console.log(`👤 Nuevo contacto guardado: ${name} (${cleanPhone})`);
     return { success: true, message: 'Creado' };
 }
 
 function syncContacts(waContacts) {
     if (!waContacts || waContacts.length === 0) return;
-    loadCache();
-    
-    const now = new Date().toISOString();
-    let hasChanges = false;
+    withTransaction(() => {
+        const db = getDb();
+        const now = new Date().toISOString();
 
-    waContacts.forEach(waContact => {
-        const jid = waContact.id;
-        const phone = normalizePhone(jid);
-        if (!phone) return;
-        
-        let localContact = contactsCache.find(c => normalizePhone(c.phone) === phone);
-        const name = waContact.name || waContact.notify || waContact.verifiedName || phone;
+        waContacts.forEach(waContact => {
+            const jid = waContact.id;
+            const phone = normalizePhone(jid);
+            if (!phone) return;
 
-        if (localContact) {
-            if (localContact.name !== name && name !== phone) {
-                localContact.name = name;
-                localContact.last_synced = now;
-                hasChanges = true;
+            const localContact = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone);
+            const name = waContact.name || waContact.notify || waContact.verifiedName || phone;
+
+            if (localContact) {
+                if (localContact.name !== name && name !== phone) {
+                    db.prepare('UPDATE contacts SET name = ?, last_synced = ? WHERE phone = ?')
+                        .run(name, now, phone);
+                }
+            } else {
+                db.prepare(`INSERT INTO contacts(phone, jid, name, bot_enabled, last_synced, added_at)
+                    VALUES (?, ?, ?, 0, ?, ?)`).run(phone, `${phone}@s.whatsapp.net`, name, now, now);
             }
-        } else {
-            contactsCache.push({
-                phone: phone,
-                jid: `${phone}@s.whatsapp.net`,
-                name: name,
-                bot_enabled: false, // Regla de seguridad
-                last_synced: now,
-                added_at: now
-            });
-            hasChanges = true;
-        }
+        });
     });
-
-    if (hasChanges) persistCache();
 }
 
 function getAllContacts() {
-    loadCache();
-    return contactsCache.map(c => ({
-        phone: c.phone, 
-        name: c.name, 
-        bot_enabled: c.bot_enabled,
-        last_synced: c.last_synced, 
+    const db = getDb();
+    const rows = db.prepare('SELECT * FROM contacts').all();
+    return rows.map(c => ({
+        phone: c.phone,
+        name: c.name,
+        bot_enabled: c.bot_enabled === null || c.bot_enabled === undefined ? undefined : !!c.bot_enabled,
+        last_synced: c.last_synced,
         added_at: c.added_at
     })).sort((a, b) => (b.added_at || '').localeCompare(a.added_at || ''));
 }
 
 function toggleContactBot(phoneOrJid, enable) {
-    loadCache();
+    const db = getDb();
     const cleanId = normalizePhone(phoneOrJid);
-    
-    let contact = contactsCache.find(c => normalizePhone(c.phone) === cleanId);
 
+    const contact = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(cleanId);
     if (contact) {
-        contact.bot_enabled = enable;
-        persistCache();
+        db.prepare('UPDATE contacts SET bot_enabled = ? WHERE phone = ?')
+            .run(enable ? 1 : 0, cleanId);
         return { success: true, newState: enable };
     }
     return { success: false, message: 'Contacto no encontrado' };
 }
 
 function isBotDisabled(jid) {
-    loadCache();
+    const db = getDb();
     const cleanId = normalizePhone(jid);
-    
-    let contact = contactsCache.find(c => normalizePhone(c.phone) === cleanId);
-    return contact ? (contact.bot_enabled === false) : false;
+
+    const contact = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(cleanId);
+    return contact ? (contact.bot_enabled === 0) : false;
 }
 
 // Elimina un contacto por teléfono o JID (lo usa la fusión LID → teléfono
 // para quitar la entrada vieja bajo la clave LID, que si no quedaría
 // duplicada en el panel).
 function removeContact(phoneOrJid) {
-    loadCache();
+    const db = getDb();
     const cleanId = normalizePhone(phoneOrJid);
-    const idx = contactsCache.findIndex(c => normalizePhone(c.phone) === cleanId);
-    if (idx === -1) return false;
-    contactsCache.splice(idx, 1);
-    persistCache();
-    return true;
+    const info = db.prepare('DELETE FROM contacts WHERE phone = ?').run(cleanId);
+    return info.changes > 0;
 }
 
 module.exports = { syncContacts, getAllContacts, toggleContactBot, isBotDisabled, addManualContact, removeContact };
