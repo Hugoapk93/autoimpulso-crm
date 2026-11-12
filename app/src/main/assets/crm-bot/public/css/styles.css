@@ -175,6 +175,39 @@ body[data-theme="dark"]::before {
 .qr-container { background: white; padding: 12px; display: inline-block; border-radius: 14px; margin: 15px 0; box-shadow: var(--shadow-md); }
 .qr-success-text { color: var(--success); font-weight: 500; }
 
+/* --- Respaldo (Ajustes) --- */
+.backup-card { background: var(--bg-input); border: 1px solid var(--border-glass); border-radius: 14px; padding: 18px; margin: 16px; }
+.backup-card h5 { margin: 0 0 6px 0; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.backup-card p { margin: 0 0 14px 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; }
+.backup-btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 13px; border-radius: 10px; border: none; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+.backup-btn-primary { background: var(--primary); color: #fff; }
+.backup-btn-secondary { background: rgba(148, 163, 184, 0.15); color: var(--text-main); border: 1px solid var(--border-glass); }
+.backup-btn:active { transform: scale(0.98); }
+.backup-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin: 0 16px 16px 16px; }
+.backup-note b { color: var(--text-main); }
+.backup-status { margin: 0 16px 16px 16px; font-size: 0.88rem; color: var(--text-muted); min-height: 1.2em; }
+.backup-status.ok { color: #16a34a; }
+.backup-status.err { color: #ef4444; }
+
+/* --- Ajustes: menú rediseñado (tarjetas con icono) --- */
+.settings-group-title { padding: 22px 20px 8px 20px; font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.6px; }
+.settings-group { background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass); }
+.settings-item { display: flex; justify-content: space-between; align-items: center; padding: 13px 20px; cursor: pointer; }
+.settings-item + .settings-item { border-top: 1px solid var(--border-glass); }
+.settings-item:active { background: rgba(148, 163, 184, 0.08); }
+.settings-item-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.settings-item-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 1rem; color: #fff; flex-shrink: 0; }
+.settings-item-icon.blue { background: #3b82f6; }
+.settings-item-icon.green { background: #16a34a; }
+.settings-item-icon.amber { background: #f59e0b; }
+.settings-item-icon.violet { background: #8b5cf6; }
+.settings-item-icon.red { background: #ef4444; }
+.settings-item-icon.teal { background: #0d9488; }
+.settings-item-text { min-width: 0; }
+.settings-item-title { font-weight: 500; font-size: 1rem; }
+.settings-item-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-item-chevron { opacity: 0.3; flex-shrink: 0; }
+
 /* --- Link LAN en la pantalla del QR (abrir el panel en la laptop) --- */
 .lan-link-card { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--border-glass); border-radius: var(--radius); background: var(--bg-glass); text-align: left; }
 .lan-link-title { margin: 0 0 8px 0; font-size: 0.9rem; font-weight: 600; color: var(--text-main); }
@@ -623,8 +656,8 @@ input:checked + .slider:before { transform: translateX(21px); }
 @media(max-width: 768px) {
     #mainApp { flex-direction: column; }
     .mobile-header { display: flex; position: relative; z-index: 50; }
-    .sidebar { position: fixed; top: 0; left: 0; height: 100%; width: 280px; transform: translateX(-100%); box-shadow: 4px 0 20px rgba(0,0,0,0.12); z-index: 1000; transition: transform 0.3s ease; }
-    [data-theme="dark"] .sidebar { box-shadow: 4px 0 20px rgba(0,0,0,0.8); }
+    .sidebar { position: fixed; top: 0; right: 0; height: 100%; width: 280px; transform: translateX(100%); box-shadow: -4px 0 20px rgba(0,0,0,0.12); z-index: 1000; transition: transform 0.3s ease; border-right: none; border-left: 1px solid var(--wa-border); }
+    [data-theme="dark"] .sidebar { box-shadow: -4px 0 20px rgba(0,0,0,0.8); }
     .sidebar.active { transform: translateX(0); }
     .view-padding { padding: 15px !important; }
     .card { padding: 15px !important; }

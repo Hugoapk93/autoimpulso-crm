@@ -408,57 +408,89 @@
                     <!-- ============================================== -->
                     <div id="settingsMenu" class="settings-panel active" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
             
-                        <div style="padding: 20px 20px 8px 20px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Preferencias</div>
-                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+                        <div class="settings-group-title">Preferencias</div>
+                        <div class="settings-group">
                 
-                            <!-- Botón: Sistema y Apariencia -->
-                            <div class="settings-list-item" onclick="openSettingsPanel('panel-sistema', 'Sistema y Apariencia')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
-                                <div style="display:flex; align-items:center; gap: 15px;">
-                                    <i class="fas fa-mobile-alt text-main" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
-                                    <span style="font-weight: 500; font-size: 1rem;">Sistema y Apariencia</span>
+                            <!-- Sistema y Apariencia -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-sistema', 'Sistema y Apariencia')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon blue"><i class="fas fa-mobile-alt"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Sistema y Apariencia</div>
+                                        <div class="settings-item-sub">Tema, zona horaria y notificaciones</div>
+                                    </div>
                                 </div>
-                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
-                            <!-- Botón: Información del Negocio -->
-                            <div class="settings-list-item" onclick="openSettingsPanel('panel-negocio', 'Información del Negocio')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
-                                <div style="display:flex; align-items:center; gap: 15px;">
-                                    <i class="fas fa-store text-main" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
-                                    <span style="font-weight: 500; font-size: 1rem;">Información del Negocio</span>
+                            <!-- Información del Negocio -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-negocio', 'Información del Negocio')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon green"><i class="fas fa-store"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Información del Negocio</div>
+                                        <div class="settings-item-sub">Nombre, asesor y ubicación</div>
+                                    </div>
                                 </div>
-                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
-                            <!-- Botón: Horarios de Atención -->
-                            <div class="settings-list-item" onclick="openSettingsPanel('panel-horarios', 'Horarios de Atención')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; cursor: pointer;">
-                                <div style="display:flex; align-items:center; gap: 15px;">
-                                    <i class="far fa-clock text-primary" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center;"></i>
-                                    <span style="font-weight: 500; font-size: 1rem;">Horarios de Atención</span>
+                            <!-- Horarios de Atención -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-horarios', 'Horarios de Atención')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon amber"><i class="far fa-clock"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Horarios de Atención</div>
+                                        <div class="settings-item-sub">Días y horas en que el bot atiende</div>
+                                    </div>
                                 </div>
-                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
                         </div>
 
-                        <div style="padding: 25px 20px 8px 20px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Personalización del Bot</div>
-                        <div style="background: var(--bg-input); border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass);">
+                        <div class="settings-group-title">Personalización del Bot</div>
+                        <div class="settings-group">
                 
-                            <!-- Botón: Variables Dinámicas -->
-                            <div class="settings-list-item" onclick="openSettingsPanel('panel-variables', 'Variables Dinámicas')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; border-bottom: 1px solid var(--border-glass); cursor: pointer;">
-                                <div style="display:flex; align-items:center; gap: 15px;">
-                                    <i class="fas fa-code text-warning" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center; color: #eab308;"></i>
-                                    <span style="font-weight: 500; font-size: 1rem;">Variables Dinámicas</span>
+                            <!-- Variables Dinámicas -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-variables', 'Variables Dinámicas')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon violet"><i class="fas fa-code"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Variables Dinámicas</div>
+                                        <div class="settings-item-sub">Datos que el bot usa en sus mensajes</div>
+                                    </div>
                                 </div>
-                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
-                            <!-- Botón: Manejo de Errores (IA) -->
-                            <div class="settings-list-item" onclick="openSettingsPanel('panel-errores', 'Manejo de Errores (IA)')" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px; cursor: pointer;">
-                                <div style="display:flex; align-items:center; gap: 15px;">
-                                    <i class="fas fa-robot text-danger" style="font-size: 1.2rem; opacity: 0.8; width: 20px; text-align: center; color: #ef4444;"></i>
-                                    <span style="font-weight: 500; font-size: 1rem;">Manejo de Errores</span>
+                            <!-- Manejo de Errores (IA) -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-errores', 'Manejo de Errores (IA)')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon red"><i class="fas fa-robot"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Manejo de Errores</div>
+                                        <div class="settings-item-sub">Qué hace el bot cuando no entiende</div>
+                                    </div>
                                 </div>
-                                <i class="fas fa-chevron-right" style="opacity: 0.3;"></i>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
+                            </div>
+
+                        </div>
+
+                        <div class="settings-group-title">Respaldo</div>
+                        <div class="settings-group">
+
+                            <!-- Respaldo y Restauración -->
+                            <div class="settings-item" onclick="openSettingsPanel('panel-respaldo', 'Respaldo y Restauración')">
+                                <div class="settings-item-left">
+                                    <div class="settings-item-icon teal"><i class="fas fa-database"></i></div>
+                                    <div class="settings-item-text">
+                                        <div class="settings-item-title">Respaldo y Restauración</div>
+                                        <div class="settings-item-sub">Descargar o cargar los datos del bot</div>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-right settings-item-chevron"></i>
                             </div>
 
                         </div>
@@ -743,6 +775,23 @@
                                 <textarea id="globErrImage" rows="2" class="error-textarea" style="padding:10px; font-size:0.95rem;" placeholder="Ej: ⚠️ Por el momento no proceso imágenes..." onchange="saveGlobalErrors()"></textarea>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- PANEL: RESPALDO -->
+                    <div id="panel-respaldo" class="settings-panel" style="position: absolute; top: 0; left: 100%; width: 100%; height: 100%; overflow-y: auto; padding-bottom: 60px; transition: transform 0.3s ease;">
+                        <div class="backup-card">
+                            <h5><i class="fas fa-download" style="color: var(--primary);"></i> Descargar respaldo</h5>
+                            <p>Descarga todos los datos del bot (contactos, chats, citas, flujo, ajustes) en un solo archivo <b>.crmbackup</b>, comprimido y cifrado. Guárdalo donde quieras.</p>
+                            <button class="backup-btn backup-btn-primary" onclick="downloadBackup()"><i class="fas fa-download"></i> Descargar respaldo</button>
+                        </div>
+                        <div class="backup-card">
+                            <h5><i class="fas fa-upload" style="color: var(--primary);"></i> Cargar respaldo</h5>
+                            <p>Elige un archivo <b>.crmbackup</b> (por ejemplo, de tu carpeta de Descargas) y se cargará directo a la carpeta de datos del bot. Los datos actuales se reemplazan por los del respaldo.</p>
+                            <input type="file" id="backupFileInput" accept=".crmbackup" style="display: none;" onchange="restoreBackup(this)">
+                            <button class="backup-btn backup-btn-secondary" onclick="document.getElementById('backupFileInput').click()"><i class="fas fa-upload"></i> Elegir archivo .crmbackup</button>
+                        </div>
+                        <div id="backupStatus" class="backup-status"></div>
+                        <p class="backup-note"><b>Nota:</b> el respaldo está cifrado con el token del panel, así que solo se puede cargar en este mismo bot. No incluye la sesión de WhatsApp: si restauras en un bot limpio, tendrás que escanear el QR de nuevo.</p>
                     </div>
 
                 </div>

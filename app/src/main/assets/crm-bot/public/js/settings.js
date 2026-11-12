@@ -539,6 +539,59 @@ window.closeSettingsPanel = function() {
     currentActivePanel = 'settingsMenu';
 }
 
+// --- Respaldo y Restauración (Ajustes → panel-respaldo) ---
+// La descarga y la subida van a /api/backup/*; el token se añade solo
+// por el envoltorio de fetch en api.js. Tras restaurar, se recarga la
+// página para que el panel lea los datos restaurados.
+function setBackupStatus(msg, kind) {
+    const el = document.getElementById('backupStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'backup-status' + (kind ? ' ' + kind : '');
+}
+window.downloadBackup = async function() {
+    setBackupStatus('Creando respaldo…');
+    try {
+        const res = await fetch('/api/backup/download', { cache: 'no-store' });
+        if (!res.ok) throw new Error('El servidor no pudo crear el respaldo.');
+        const blob = await res.blob();
+        let name = 'autoimpulso-respaldo.crmbackup';
+        const cd = res.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^";]+)"?/);
+        if (m) name = m[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setBackupStatus('Respaldo descargado: ' + name, 'ok');
+        showToast('Respaldo descargado');
+    } catch (e) {
+        console.error('[Respaldo] Error al descargar:', e);
+        setBackupStatus('No se pudo descargar el respaldo.', 'err');
+        showToast('No se pudo descargar el respaldo');
+    }
+};
+window.restoreBackup = async function(input) {
+    const file = input && input.files && input.files[0];
+    if (input) input.value = '';
+    if (!file) return;
+    setBackupStatus('Cargando respaldo…');
+    try {
+        const form = new FormData();
+        form.append('backup', file);
+        const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || 'Respaldo inválido.');
+        setBackupStatus(`Respaldo cargado: ${data.restored} archivo(s). Recargando…`, 'ok');
+        showToast('Respaldo cargado');
+        setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        console.error('[Respaldo] Error al cargar:', e);
+        setBackupStatus(e.message || 'No se pudo cargar el respaldo.', 'err');
+        showToast('No se pudo cargar el respaldo');
+    }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Cargar Modo Oscuro
     if (localStorage.getItem('darkMode') === 'true' || localStorage.getItem('theme') === 'dark') {
