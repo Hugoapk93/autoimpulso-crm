@@ -512,9 +512,10 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .quick-btn:active { transform: scale(0.95); background-color: var(--primary-soft); }
 
 /* --- VISOR DE FLUJO VERTICAL (DRAWER) --- */
-#waFlowDrawer { position: absolute; bottom: 66px; left: 0; width: 100%; max-height: 0; background: var(--wa-bg-list); transition: max-height 0.3s ease; overflow-y: auto; border-top: 1px solid var(--wa-border); z-index: 40; display: flex; flex-direction: column; padding: 0; box-shadow: 0 -4px 15px rgba(0,0,0,0.1); }
-[data-theme="dark"] #waFlowDrawer { box-shadow: 0 -4px 15px rgba(0,0,0,0.4); }
-#waFlowDrawer.open { max-height: 250px; padding: 10px 0; }
+#waFlowDrawer { position: absolute; bottom: 66px; left: 0; width: 100%; max-height: 0; background: var(--wa-bg-list); transition: max-height 0.3s ease; overflow-y: auto; border-top: none; z-index: 40; display: flex; flex-direction: column; padding: 0; box-shadow: none; }
+[data-theme="dark"] #waFlowDrawer { box-shadow: none; }
+#waFlowDrawer.open { max-height: 250px; padding: 10px 0; border-top: 1px solid var(--wa-border); box-shadow: 0 -4px 15px rgba(0,0,0,0.1); }
+[data-theme="dark"] #waFlowDrawer.open { box-shadow: 0 -4px 15px rgba(0,0,0,0.4); }
 .flow-item-row { padding: 9px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; color: var(--text-muted); font-size: 0.92rem; }
 .flow-item-row:hover { background: var(--hover-soft); }
 .flow-item-row.past { opacity: 0.6; }

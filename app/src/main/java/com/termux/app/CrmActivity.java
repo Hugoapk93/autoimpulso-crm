@@ -244,11 +244,34 @@ public class CrmActivity extends Activity implements ServiceConnection {
      */
     @Override
     public void onBackPressed() {
-        if (mWebView != null && mWebView.canGoBack()) {
-            mWebView.goBack();
-        } else {
+        if (mWebView == null) {
             super.onBackPressed();
+            return;
         }
+        // Preguntar al panel si consume el atrás (cierra chat, modal,
+        // menú o selección, o muestra el aviso de salir). Si el panel no
+        // está cargado o no tiene la función, usar el comportamiento
+        // anterior (goBack si hay historia, si no salir). Antes se usaba
+        // mWebView.goBack() directo y el baile goBack/popstate/pushState
+        // vaciaba la historia: el gesto de atrás terminaba seleccionando
+        // otro chat para borrar y sacando de la app.
+        mWebView.evaluateJavascript(
+            "(function(){ try { return (typeof window.__crmHandleBack === 'function') ? window.__crmHandleBack() : null; } catch(e){ return null; } })();",
+            value -> {
+                if ("true".equals(value)) {
+                    // El panel consumió el atrás. No hacer nada.
+                } else if ("false".equals(value)) {
+                    // Segunda pulsada para salir.
+                    finish();
+                } else {
+                    // Sin panel o sin función: comportamiento anterior.
+                    if (mWebView.canGoBack()) {
+                        mWebView.goBack();
+                    } else {
+                        finish();
+                    }
+                }
+            });
     }
 
     /** Puente JavaScript para el panel (window.Android). */

@@ -6,8 +6,13 @@ import * as API from '../api.js';
 let isSelectionMode = false;
 let selectedChats = [];
 let longPressTimer;
-let ignoreClick = false;
 let renderListTimer = null;
+// ignoreClickUntil: hasta cuándo ignorar el clic que sigue a una pulsación
+// larga (por tiempo, no por bandera, para que un mousedown sintetizado no
+// lo pueda resetear). lastTouchEnd: cuándo terminó el último toque, para
+// ignorar el mousedown que el navegador sintetiza tras un toque.
+let ignoreClickUntil = 0;
+let lastTouchEnd = 0;
 
 export function smartRenderChats(phoneToUpdate = null) {
     const state = getAppState();
@@ -130,18 +135,26 @@ export function renderChatList(list) {
 
         const startPress = (e) => {
             if (e.type === 'mousedown' && e.button !== 0) return;
-            ignoreClick = false;
+            // Ignorar el mousedown que el navegador sintetiza tras un toque
+            // (los listeners son passive y no pueden hacer preventDefault):
+            // si no, resetea la supresión del clic y el clic que sigue a la
+            // pulsación larga vuelve a togglear la selección en otro chat
+            // (la lista se re-renderiza al entrar en selección y el chat
+            // bajo el dedo ya es otro).
+            if (e.type === 'mousedown' && Date.now() - lastTouchEnd < 500) return;
             const pt = e.touches && e.touches[0] ? e.touches[0] : e;
             pressStartX = pt.clientX; pressStartY = pt.clientY;
             div.classList.add('pressing');
             longPressTimer = setTimeout(() => {
-                ignoreClick = true;
+                ignoreClickUntil = Date.now() + 600;
                 toggleSelection(u.phone);
                 if (navigator.vibrate) navigator.vibrate(50);
             }, LONG_PRESS_MS);
         };
 
         const cancelPress = () => { clearTimeout(longPressTimer); div.classList.remove('pressing'); };
+
+        const handleTouchEnd = () => { lastTouchEnd = Date.now(); cancelPress(); };
 
         const handleMove = (e) => {
             const pt = e.touches && e.touches[0] ? e.touches[0] : e;
@@ -151,7 +164,7 @@ export function renderChatList(list) {
         };
 
         const handleClick = (e) => {
-            if (ignoreClick) { ignoreClick = false; return; }
+            if (Date.now() < ignoreClickUntil) return;
             if (isSelectionMode) { toggleSelection(u.phone); } 
             else { openWaChat(u.phone); }
         };
@@ -160,7 +173,7 @@ export function renderChatList(list) {
         div.addEventListener('touchstart', startPress, {passive: true});
         div.addEventListener('mouseup', cancelPress);
         div.addEventListener('mouseleave', cancelPress);
-        div.addEventListener('touchend', cancelPress);
+        div.addEventListener('touchend', handleTouchEnd);
         div.addEventListener('touchmove', handleMove, {passive: true});
         div.addEventListener('click', handleClick);
 

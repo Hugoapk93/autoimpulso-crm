@@ -806,44 +806,71 @@ async function registerPush() {
 
 let lastBackPress = 0;
 
-window.addEventListener('popstate', function (event) {
+// Qué hacer cuando el usuario pulsa atrás. Devuelve 'consumed' si cerró
+// algo (modal, chat, menú o selección), 'toast' si es la primera pulsada
+// para salir (mostró el aviso) o 'exit' si es la segunda pulsada seguida
+// para salir. La usan el popstate (navegador de escritorio) y el puente
+// __crmHandleBack (botón atrás de Android). No toca la historia.
+function resolveBackAction() {
     const activeModal = document.querySelector('.modal.active');
     if (activeModal) {
         activeModal.classList.remove('active');
         if (activeModal.id === 'editNameModal' && typeof closeEditNameModal === 'function') closeEditNameModal();
-        return;
+        return 'consumed';
     }
 
     const mainChat = document.getElementById('waMainChat');
     if (window.innerWidth <= 768 && mainChat && mainChat.classList.contains('mobile-open')) {
         closeWaChat();
-        return;
+        return 'consumed';
     }
 
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('active')) {
         toggleMenu();
-        return;
+        return 'consumed';
     }
 
     // Si está activa la selección para borrar, el atrás primero cancela
-    // la selección (no sale de la app). Se empuja una capa para que la
-    // historia quede igual que antes de pulsar atrás.
+    // la selección (no sale de la app).
     if (typeof isChatSelectionActive === 'function' && isChatSelectionActive()) {
         exitSelectionMode();
-        pushNavigationLayer();
-        return;
+        return 'consumed';
     }
 
     const now = Date.now();
     if (now - lastBackPress < 2000) {
-        history.back(); 
-        return;
+        return 'exit';
     }
 
     lastBackPress = now;
     showToast("Desliza atrás de nuevo para salir");
-    pushNavigationLayer(); 
+    return 'toast';
+}
+
+// Puente para el botón atrás de Android (CrmActivity lo llama con
+// evaluateJavascript). Devuelve true si el panel consumió el atrás y
+// false si la app debe cerrarse. Antes Android usaba mWebView.goBack()
+// y el baile goBack/popstate/pushState vaciaba la historia (y el gesto
+// de atrás terminaba seleccionando otro chat y sacando de la app).
+window.__crmHandleBack = function() {
+    try {
+        return resolveBackAction() !== 'exit';
+    } catch (e) {
+        return true;
+    }
+};
+
+window.addEventListener('popstate', function (event) {
+    // Navegador de escritorio: el atrás ya retrocedió una entrada de la
+    // historia. Si se cerró algo o se mostró el aviso, reponer la capa
+    // para que la historia no se agote. Si es 'exit', no reponerla.
+    // (Antes se llamaba a history.back() aquí dentro, lo que re-disparaba
+    // popstate y vaciaba la historia en bucle.)
+    const action = resolveBackAction();
+    if (action === 'consumed' || action === 'toast') {
+        pushNavigationLayer();
+    }
 });
 
 let filterTimer;
