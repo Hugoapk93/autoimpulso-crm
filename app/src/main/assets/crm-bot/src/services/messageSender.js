@@ -242,6 +242,9 @@ const sendStepMessage = async (sock, jid, stepId, userData = {}) => {
              const checkUser = getUser(cleanClientPhone);
              if (checkUser?.current_step === stepId) {
                  await updateUser(cleanClientPhone, { current_step: step.next_step });
+                 // Avisar al panel: el paso cambio (puede ser un filtro);
+                 // sin este evento los botones no aparecen hasta re-entrar.
+                 botEvents.emit('user_update', { phone: cleanClientPhone, current_step: step.next_step });
                  await sendStepMessage(sock, jid, step.next_step, userData);
              }
         }, 1500);

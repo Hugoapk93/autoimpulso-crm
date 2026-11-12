@@ -123,6 +123,15 @@ const bootstrap = () => {
         sendPushNotification(data.title, data.body, data.url);
     });
 
+    // 3. Avisar al panel cuando cambia el paso de un cliente (flow.js ya
+    // emitía este evento, pero nadie lo reenviaba al socket: por eso los
+    // botones del paso filtro no aparecían hasta salir y volver a entrar
+    // al chat). El panel actualiza current_step en memoria y redibuja los
+    // botones de respuesta rápida en vivo.
+    botEvents.on('user_update', (data) => {
+        io.emit('user_update', data);
+    });
+
     // ==========================================
     // 🛑 CICLO DE VIDA DEL SERVIDOR
     // ==========================================
