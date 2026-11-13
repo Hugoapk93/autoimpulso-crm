@@ -114,6 +114,7 @@ export const saveFlowStep = (stepId, stepData) => post('/api/flow/step', { stepI
 export const deleteFlowStep = (stepId) => del(`/api/flow/step/${stepId}`);
 
 export const getUsers = () => get('/api/users'); 
+export const getUserMessages = (phone) => get('/api/users/' + encodeURIComponent(phone) + '/messages');
 export const getContacts = () => get('/api/contacts'); 
 
 export const sendMessage = (phone, text, mediaUrl = null) => post('/api/send-message', { phone, text, mediaUrl });

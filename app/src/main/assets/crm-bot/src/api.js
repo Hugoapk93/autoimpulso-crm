@@ -13,7 +13,7 @@ const {
     getKeywords, saveKeyword, deleteKeyword, 
     getFullFlow, saveFlowStep, deleteFlowStep, 
     getSettings, saveSettings, 
-    getAllUsers, updateUser, getUser, deleteUser,
+    getAllUsers, getAllUsersLight, getUserMessages, updateUser, getUser, deleteUser,
     initializeDB,
     getLidMap, saveLidMap, getLidToPhoneMap,
     getDb, closeDb, saveSubscription
@@ -502,13 +502,22 @@ router.delete('/flow/step/:id', async (req, res) => { await deleteFlowStep(req.p
 // 🔥 ESCUDO PARA LA INTERFAZ
 router.get('/users', (req, res) => {
     const lidToPhone = getLidToPhoneMap();
-    const users = getAllUsers().map(u => {
+    // v23: lista ligera, SIN el historial de mensajes (ver getAllUsersLight
+    // en database.js). El historial se pide aparte al abrir el chat.
+    const users = getAllUsersLight().map(u => {
         const out = { ...u, phone: normalizePhone(u.phone) };
         // El registro del telefono real lleva su LID, si se conoce.
         Object.keys(lidToPhone).forEach(lid => { if (lidToPhone[lid] === out.phone) out.lid = lid; });
         return out;
     });
     res.json(users);
+});
+
+// v23: historial completo de UN cliente (lo pide el panel al abrir su chat).
+router.get('/users/:phone/messages', (req, res) => {
+    const phone = normalizePhone(req.params.phone || '');
+    if (!phone) return res.status(400).json({ error: 'Falta el teléfono' });
+    res.json(getUserMessages(phone));
 });
 
 // 📊 Exportar contactos a Excel (.xlsx real, sin dependencias nuevas).

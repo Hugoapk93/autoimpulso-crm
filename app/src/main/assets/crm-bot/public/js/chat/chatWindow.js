@@ -8,7 +8,7 @@ import * as API from '../api.js';
 let pendingJumpStep = null;
 let pendingCrmAction = null;
 
-export function openWaChat(phone, isRefresh = false) {
+export async function openWaChat(phone, isRefresh = false) {
     setCurrentChatPhone(phone); 
     const state = getAppState();
     const targetKey = getCleanPhone(phone);
@@ -29,12 +29,36 @@ export function openWaChat(phone, isRefresh = false) {
     if (switchEl) switchEl.checked = u.bot_enabled; 
 
     const box = document.getElementById('waMsgContainer');
-    const msgs = u.messages || [];
 
     if (!isRefresh) {
         pushNavigationLayer(); 
-        box.innerHTML = '';
         document.getElementById('waInputArea').style.display = 'flex';
+        if(window.innerWidth <= 768) {
+            const mainChat = document.getElementById('waMainChat');
+            if(mainChat) mainChat.classList.add('mobile-open');
+        }
+    }
+
+    // v23: la lista ya no trae el historial (GET /users es ligero). Al abrir
+    // un chat por primera vez, pedir su historial. Se reemplaza lo que haya
+    // en memoria por el historial autoritativo de la BD (que ya incluye los
+    // mensajes que llegaron por socket mientras el chat estaba cerrado).
+    if (!u.messagesLoaded && !isRefresh) {
+        box.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);">Cargando historial...</div>';
+        try {
+            const fetched = await API.getUserMessages(u.realDbPhone || u.phone);
+            u.messages = Array.isArray(fetched) ? fetched : [];
+        } catch (e) {
+            u.messages = u.messages || [];
+        }
+        u.messagesLoaded = true;
+        // Si el usuario ya cambió de chat mientras cargaba, no pintar aquí.
+        if (getCleanPhone(getAppState().currentChatPhone) !== targetKey) return;
+    }
+    const msgs = u.messages || [];
+
+    if (!isRefresh) {
+        box.innerHTML = '';
         if(msgs.length === 0) {
             box.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">
                 <i class="fas fa-comment-slash" style="font-size:2rem; margin-bottom:10px;"></i><br>Sin historial reciente.</div>`;
@@ -42,10 +66,6 @@ export function openWaChat(phone, isRefresh = false) {
             // Pasamos m.id y m.reaction para pintar las reacciones de inmediato
             msgs.forEach(m => addBubble(m.text, m.fromMe, m.stepId, m.timestamp, m.mediaUrl, 3, m.id, m.reaction, extraFor(m)));
             setTimeout(() => box.scrollTop = box.scrollHeight, 50);
-        }
-        if(window.innerWidth <= 768) {
-            const mainChat = document.getElementById('waMainChat');
-            if(mainChat) mainChat.classList.add('mobile-open');
         }
     } else {
         const domCount = box.querySelectorAll('.wa-bubble').length;

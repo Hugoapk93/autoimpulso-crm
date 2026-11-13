@@ -361,6 +361,17 @@ function getAllUsers() {
     return rows.map(r => userRowToObject(r, getUserMessages(r.phone)));
 }
 
+// Lista ligera (v23): los usuarios SIN el historial de mensajes. La lista
+// solo necesita last_message / last_active / unreadCount (que viven en la
+// fila del usuario, no en messages), así que traer los 30 mensajes de cada
+// cliente en cada carga era lo que hacía lenta la interfaz (~864 KB con
+// 100 clientes). El historial se pide aparte al abrir el chat
+// (GET /users/:phone/messages). Es la misma consulta, solo sin el N+1.
+function getAllUsersLight() {
+    const rows = ensureDb().prepare('SELECT * FROM users WHERE archived = 0 ORDER BY rowid').all();
+    return rows.map(r => userRowToObject(r, []));
+}
+
 function getUser(phone) {
     if (!phone) return {};
     const row = ensureDb().prepare('SELECT * FROM users WHERE phone = ?').get(String(phone));
@@ -791,7 +802,7 @@ function migrateFromJson(opts = {}) {
 
 module.exports = {
     initializeDB,
-    getAllUsers, getUser, updateUser, deleteUser, updateMessage,
+    getAllUsers, getAllUsersLight, getUserMessages, getUser, updateUser, deleteUser, updateMessage,
     getFullFlow, getFlowStep, saveFlowStep, deleteFlowStep,
     getSettings, saveSettings,
     getKeywords, saveKeyword, deleteKeyword,
