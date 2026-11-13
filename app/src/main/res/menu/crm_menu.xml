@@ -13,6 +13,11 @@
         android:title="@string/crm_menu_restart_bot"
         android:showAsAction="never" />
     <item
+        android:id="@+id/crm_menu_wakelock"
+        android:title="@string/crm_menu_wakelock"
+        android:checkable="true"
+        android:showAsAction="never" />
+    <item
         android:id="@+id/crm_menu_token"
         android:title="@string/crm_menu_token"
         android:showAsAction="never" />

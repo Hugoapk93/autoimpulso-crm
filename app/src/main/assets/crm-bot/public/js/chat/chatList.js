@@ -1,5 +1,5 @@
 import { getCleanPhone, escapeHTML, formatSmartDate, showToast } from '../utils.js';
-import { getAppState, setAllContactsCache, setCurrentSearchQuery } from '../main.js';
+import { getAppState, setAllContactsCache, setCurrentSearchQuery, reloadActivity } from '../main.js';
 import { openWaChat, closeWaChat } from './chatWindow.js';
 import * as API from '../api.js';
 
@@ -64,7 +64,79 @@ export function smartRenderChats(phoneToUpdate = null) {
     }
 }
 
+// Pull-to-refresh en la lista de chats: al jalar hacia abajo desde arriba
+// (lista en scrollTop 0), el buscador y la lista se separan y aparece un
+// spinner estático en el hueco; al soltarlo, el spinner gira mientras se
+// recarga la lista (loadActivity), pintando los chats nuevos que no
+// llegaron por socket. No interfiere con la pulsación larga (que se
+// cancela al mover >12 px) ni con el scroll normal (solo actúa jalando
+// hacia abajo desde arriba, y no cuando hay selección activa).
+let pullRefreshInit = false;
+let pullStartY = 0;
+let pullDistance = 0;
+let pullRefreshing = false;
+const PULL_THRESHOLD_PX = 60;
+const PULL_MAX_PX = 120;
+
+export function initPullToRefresh() {
+    if (pullRefreshInit) return;
+    const listEl = document.getElementById('waChatList');
+    const indicator = document.getElementById('waPullRefresh');
+    if (!listEl || !indicator) return;
+    pullRefreshInit = true;
+
+    const setPullUI = (px) => {
+        // El indicador crece y empuja la lista hacia abajo: el buscador se
+        // separa de la lista y el spinner queda en el hueco.
+        indicator.style.height = px > 0 ? px + 'px' : '0px';
+        indicator.style.opacity = px > 0 ? String(Math.min(1, px / PULL_THRESHOLD_PX)) : '0';
+    };
+
+    listEl.addEventListener('touchstart', (e) => {
+        if (pullRefreshing || pullStartY !== 0) return;
+        if (listEl.scrollTop !== 0) return;
+        if (typeof isChatSelectionActive === 'function' && isChatSelectionActive()) return;
+        if (!e.touches || !e.touches[0]) return;
+        pullStartY = e.touches[0].clientY;
+        pullDistance = 0;
+    }, { passive: true });
+
+    listEl.addEventListener('touchmove', (e) => {
+        if (pullRefreshing || pullStartY === 0) return;
+        if (listEl.scrollTop !== 0) return;
+        if (!e.touches || !e.touches[0]) return;
+        const dy = e.touches[0].clientY - pullStartY;
+        if (dy <= 0) { pullDistance = 0; setPullUI(0); return; }
+        // Jalar hacia abajo desde arriba: evitar el rebote nativo.
+        e.preventDefault();
+        pullDistance = Math.min(dy, PULL_MAX_PX);
+        setPullUI(pullDistance);
+    }, { passive: false });
+
+    const endPull = async () => {
+        if (pullStartY === 0) return;
+        const d = pullDistance;
+        pullStartY = 0;
+        pullDistance = 0;
+        if (pullRefreshing) return;
+        if (d >= PULL_THRESHOLD_PX) {
+            pullRefreshing = true;
+            indicator.classList.add('refreshing');
+            setPullUI(PULL_THRESHOLD_PX);
+            try { await reloadActivity(); } catch (err) {}
+            pullRefreshing = false;
+            indicator.classList.remove('refreshing');
+            setPullUI(0);
+        } else {
+            setPullUI(0);
+        }
+    };
+    listEl.addEventListener('touchend', endPull, { passive: true });
+    listEl.addEventListener('touchcancel', () => { pullStartY = 0; pullDistance = 0; setPullUI(0); }, { passive: true });
+}
+
 export function renderChatList(list) {
+    initPullToRefresh();
     const c = document.getElementById('waChatList');
     if(!c) return; 
     c.innerHTML = '';

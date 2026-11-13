@@ -131,6 +131,13 @@
                         </div>
                     </div>
 
+                    <!-- Pull-to-refresh: al jalar la lista hacia abajo desde arriba,
+                         el buscador y la lista se separan y aparece este spinner
+                         (estático mientras se jala, girando al soltar y refrescar). -->
+                    <div id="waPullRefresh" class="wa-pull-refresh" aria-hidden="true">
+                        <div class="wa-pull-spinner"></div>
+                    </div>
+
                     <div id="waHeaderSelection" class="wa-selection-header" style="display:none;">
                         <div class="selection-actions">
                             <i class="fas fa-arrow-left icon-btn" onclick="exitSelectionMode()"></i>

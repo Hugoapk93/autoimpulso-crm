@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -89,6 +90,15 @@ public class CrmActivity extends Activity implements ServiceConnection {
     /** Time allowed on first run (downloads Node.js + npm install need internet). */
     private static final int SETUP_TIMEOUT_MS = 10 * 60_000;
 
+    // Wake lock parcial: mantiene el CPU despierto con la pantalla apagada
+    // para que el bot siga corriendo en segundo plano sin que Doze lo
+    // suspenda. Es estático para que sobreviva a que la Activity se
+    // destruya (el bot corre en TermuxService, no en la Activity). NO se
+    // libera en onDestroy: el bot debe seguir corriendo al salir de la
+    // app. Solo se libera desde el menú o cuando el proceso muere (Android
+    // lo libera solo). El permiso WAKE_LOCK ya está en el Manifest.
+    private static PowerManager.WakeLock sWakeLock;
+
     private WebView mWebView;
     private View mLoadingView;
     private View mErrorView;
@@ -145,6 +155,11 @@ public class CrmActivity extends Activity implements ServiceConnection {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_crm);
+
+        // Wake lock desde el arranque: el bot debe seguir corriendo con la
+        // pantalla apagada, sin que Hugo tenga que instalar Termux:API ni
+        // meter comandos. Es idempotente (si ya está tomado, no hace nada).
+        acquireWakeLock();
 
         Toolbar toolbar = findViewById(R.id.crm_toolbar);
         toolbar.setTitle(R.string.application_name);
@@ -422,6 +437,47 @@ public class CrmActivity extends Activity implements ServiceConnection {
     }
 
     @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        MenuItem wakeItem = menu.findItem(R.id.crm_menu_wakelock);
+        if (wakeItem != null) wakeItem.setChecked(isWakeLockHeld());
+        return super.onPrepareOptionsMenu(menu);
+    }
+
+    /** Toma el wake lock parcial (CPU despierto, pantalla apagada). */
+    private void acquireWakeLock() {
+        if (isWakeLockHeld()) return;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm == null) return;
+            sWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AutoimpulsoCRM:BotWakeLock");
+            sWakeLock.acquire();
+            Logger.logDebug(LOG_TAG, "Wake lock adquirido");
+        } catch (Exception e) {
+            Logger.logError(LOG_TAG, "No se pudo adquirir el wake lock: " + e.getMessage());
+            sWakeLock = null;
+        }
+    }
+
+    /** Libera el wake lock (el bot podrá dormirse con la pantalla apagada). */
+    private void releaseWakeLock() {
+        try {
+            if (sWakeLock != null && sWakeLock.isHeld()) sWakeLock.release();
+        } catch (Exception e) {
+            Logger.logError(LOG_TAG, "No se pudo liberar el wake lock: " + e.getMessage());
+        } finally {
+            sWakeLock = null;
+        }
+    }
+
+    private boolean isWakeLockHeld() {
+        try {
+            return sWakeLock != null && sWakeLock.isHeld();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.crm_menu_terminal) {
@@ -432,6 +488,15 @@ public class CrmActivity extends Activity implements ServiceConnection {
             return true;
         } else if (id == R.id.crm_menu_restart_bot) {
             restartBot();
+            return true;
+        } else if (id == R.id.crm_menu_wakelock) {
+            if (isWakeLockHeld()) {
+                releaseWakeLock();
+                Toast.makeText(this, R.string.crm_wakelock_off, Toast.LENGTH_SHORT).show();
+            } else {
+                acquireWakeLock();
+                Toast.makeText(this, R.string.crm_wakelock_on, Toast.LENGTH_SHORT).show();
+            }
             return true;
         } else if (id == R.id.crm_menu_token) {
             String token = readApiToken();

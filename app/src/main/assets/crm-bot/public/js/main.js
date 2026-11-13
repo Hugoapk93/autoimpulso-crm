@@ -81,6 +81,16 @@ const socket = (typeof io === 'function') ? io({ reconnection: true }) : { on() 
 socket.on('connect', () => { updateConnStatus(true); if (apiConnected) loadActivity(); });
 socket.on('disconnect', () => { updateConnStatus(false); });
 
+// Al volver a la app (pantalla encendida, app al frente), recargar la
+// lista: mientras la app estuvo en segundo plano el WebView pausa el JS
+// y los eventos del socket se pierden, así que la lista queda vieja.
+// Con esto, al regresar se pintan los chats nuevos sin hacer nada.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && apiConnected) {
+        loadActivity();
+    }
+});
+
 // 🔥 ACTUALIZADO: Eliminar de la UI visualmente
 socket.on('chat_deleted', (data) => {
     if (data && data.phone) {

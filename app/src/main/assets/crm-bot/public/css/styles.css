@@ -427,6 +427,14 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .selection-count { font-size: 1.2rem; font-weight: 600; }
 .wa-list-container { flex: 1; overflow-y: auto; overflow-x: hidden; }
 
+/* Pull-to-refresh: el indicador crece entre el buscador y la lista al
+   jalar hacia abajo. El spinner es estático mientras se jala y gira
+   (clase .refreshing) al soltar y recargar. */
+.wa-pull-refresh { height: 0; opacity: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wa-pull-spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--wa-border); border-top-color: #25d366; }
+.wa-pull-refresh.refreshing .wa-pull-spinner { animation: wa-pull-spin 0.8s linear infinite; }
+@keyframes wa-pull-spin { to { transform: rotate(360deg); } }
+
 .wa-chat-item { display: flex; padding: 13px 14px; border-bottom: 1px solid var(--wa-border); cursor: pointer; align-items: center; transition: background 0.15s; user-select: none; }
 .wa-chat-item:hover { background: var(--hover-soft); }
 .wa-chat-item.pressing { background: var(--hover-soft); }

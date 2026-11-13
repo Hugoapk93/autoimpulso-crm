@@ -28,6 +28,9 @@
     <string name="crm_menu_terminal">Terminal</string>
     <string name="crm_menu_reload">Recargar panel</string>
     <string name="crm_menu_restart_bot">Reiniciar bot</string>
+    <string name="crm_menu_wakelock">Wake lock (seguir en segundo plano)</string>
+    <string name="crm_wakelock_on">Wake lock activado: el bot seguirá corriendo con la pantalla apagada.</string>
+    <string name="crm_wakelock_off">Wake lock desactivado: el bot podrá dormirse con la pantalla apagada.</string>
     <string name="crm_menu_token">Token del panel</string>
     <string name="crm_token_title">Token del panel</string>
     <string name="crm_token_hint">Este es el token para entrar al panel. Toca el icono para copiarlo y pégalo cuando el panel te lo pida.</string>
